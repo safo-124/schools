@@ -26,28 +26,40 @@ export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id || session.user.role !== UserRole.SCHOOL_ADMIN) {
+      console.warn('[API_ANNOUNCEMENTS_GET_ALL] Unauthorized access attempt.');
       return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
     }
 
     const schoolAdminUserId = session.user.id;
     const adminSchoolLink = await prisma.schoolAdmin.findFirst({
-        where: { userId: schoolAdminUserId }, // Assuming one user is admin of one school contextually here
+        where: { userId: schoolAdminUserId }, 
         select: { schoolId: true }
     });
 
     if (!adminSchoolLink?.schoolId) {
+      console.warn(`[API_ANNOUNCEMENTS_GET_ALL] Admin user ${schoolAdminUserId} not associated with any school.`);
       return NextResponse.json({ message: 'Admin not associated with any school.' }, { status: 404 });
     }
     const schoolId = adminSchoolLink.schoolId;
     console.log(`[API_ANNOUNCEMENTS_GET_ALL] Fetching announcements for School ID: ${schoolId}`);
 
-    // Optional: Add query params for filtering by isPublished, audience, or date range
     const announcements = await prisma.schoolAnnouncement.findMany({
       where: {
         schoolId: schoolId,
       },
-      include: {
-        createdByAdmin: { // To get details of who created it
+      select: { // Explicitly select all fields for clarity and to ensure `title` is included
+        id: true,
+        schoolId: true,
+        title: true,
+        content: true,
+        publishDate: true,
+        expiryDate: true,
+        audience: true,
+        isPublished: true,
+        createdByAdminId: true,
+        createdAt: true,
+        updatedAt: true,
+        createdByAdmin: { 
           select: {
             user: {
               select: { firstName: true, lastName: true, email: true }
@@ -60,11 +72,12 @@ export async function GET(req: NextRequest) {
         { createdAt: 'desc' },
       ],
     });
-    console.log(`[API_ANNOUNCEMENTS_GET_ALL] Found ${announcements.length} announcements for school ID: ${schoolId}`);
+    console.log(`[API_ANNOUNCEMENTS_GET_ALL] Found ${announcements.length} announcements for school ID: ${schoolId}.`);
+    // console.log('[API_ANNOUNCEMENTS_GET_ALL] Data preview:', announcements.length > 0 ? announcements[0] : "Empty list");
     return NextResponse.json(announcements, { status: 200 });
 
-  } catch (error) {
-    console.error('[API_ANNOUNCEMENTS_GET_ALL] An error occurred:', error);
+  } catch (error: any) {
+    console.error('[API_ANNOUNCEMENTS_GET_ALL] An error occurred:', error.name, error.message, error.stack);
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
         return NextResponse.json({ message: `Database error: ${error.message}` }, { status: 500 });
     }
@@ -79,16 +92,18 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id || session.user.role !== UserRole.SCHOOL_ADMIN) {
+      console.warn('[API_ANNOUNCEMENTS_POST] Unauthorized access attempt.');
       return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
     }
-    const schoolAdminUserId = session.user.id; // This is User.id
+    const schoolAdminUserId = session.user.id; 
 
     const adminSchoolLink = await prisma.schoolAdmin.findFirst({
-      where: { userId: schoolAdminUserId }, // Find the SchoolAdmin record
-      select: { schoolId: true, id: true } // Select schoolId AND the id of the SchoolAdmin record itself
+      where: { userId: schoolAdminUserId }, 
+      select: { schoolId: true, id: true } // Select schoolId AND the id of the SchoolAdmin record
     });
 
     if (!adminSchoolLink?.schoolId || !adminSchoolLink?.id) {
+      console.warn(`[API_ANNOUNCEMENTS_POST] Admin profile or associated school not found for user ${schoolAdminUserId}.`);
       return NextResponse.json({ message: 'Admin profile or associated school not found.' }, { status: 400 });
     }
     const schoolId = adminSchoolLink.schoolId;
@@ -110,13 +125,13 @@ export async function POST(req: NextRequest) {
         schoolId,
         title,
         content,
-        publishDate: publishDate ? new Date(publishDate) : new Date(), // Default to now if not specified
+        publishDate: publishDate ? new Date(publishDate) : new Date(), 
         expiryDate: expiryDate ? new Date(expiryDate) : null,
-        audience: audience || "ALL", // Default audience to ALL if not specified
-        isPublished: isPublished !== undefined ? isPublished : true, // Default to true if not specified
-        createdByAdminId: schoolAdminRecordId, // Link to the SchoolAdmin record ID
+        audience: audience || "ALL", 
+        isPublished: isPublished !== undefined ? isPublished : true, 
+        createdByAdminId: schoolAdminRecordId, 
       },
-      include: {
+      include: { // Include details in the response for confirmation
         createdByAdmin: {
           select: { user: { select: { firstName: true, lastName: true }}}
         }
@@ -126,13 +141,12 @@ export async function POST(req: NextRequest) {
     console.log(`[API_ANNOUNCEMENTS_POST] Announcement "${newAnnouncement.title}" created successfully for school ${schoolId}`);
     return NextResponse.json(newAnnouncement, { status: 201 });
 
-  } catch (error) {
-    console.error('[API_ANNOUNCEMENTS_POST] An error occurred:', error);
+  } catch (error: any) {
+    console.error('[API_ANNOUNCEMENTS_POST] An error occurred:', error.name, error.message, error.stack);
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      // Handle specific Prisma errors if needed, e.g., P2002 for unique constraints if any apply
       return NextResponse.json({ message: `Database error occurred: ${error.message}` }, { status: 500 });
     }
-    if (error instanceof z.ZodError) { // Should be caught by safeParse earlier
+    if (error instanceof z.ZodError) { 
         return NextResponse.json({ message: 'Invalid input (Zod final check)', errors: error.errors }, { status: 400 });
     }
     return NextResponse.json({ message: 'An unexpected error occurred while creating the announcement.' }, { status: 500 });
