@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
           }
         },
         _count: { // Example: count students in each class
-          select: { studentsEnrolled: true } 
+          select: { currentStudents: true } 
         }
       },
       orderBy: [
