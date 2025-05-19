@@ -2,7 +2,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'; // Adjust path if needed
+import { authOptions } from '@/lib/auth'; // Adjust path if needed
 import { UserRole } from '@prisma/client';
 import { redirect } from 'next/navigation';
 

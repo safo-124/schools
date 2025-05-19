@@ -1,36 +1,41 @@
 // app/api/school-admin/classes/[classId]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';;
+import { authOptions } from '@/lib/auth';  // Or from '@/lib/auth'
 import prisma from '@/lib/db';
-import { UserRole, Prisma } from '@prisma/client'; // TermPeriod removed as not directly used in this Zod schema
+import { UserRole, Prisma } from '@prisma/client';
 import { z } from 'zod';
 
-// Zod schema for updating a class (all fields optional for PATCH)
+// Zod schema for updating a class (remains the same)
 const updateClassApiSchema = z.object({
   name: z.string().min(1, "Class name/level is required.").optional(),
-  section: z.string().optional().or(z.literal('')).nullable(), // Allow empty string or null
+  section: z.string().optional().or(z.literal('')).nullable(),
   academicYear: z.string()
-    .regex(/^\d{4}-\d{4}$/, "Academic year must be in YYYY-YYYY format (e.g., 2024-2025).")
+    .regex(/^\d{4}-\d{4}$/, "Academic year must be in YYYY-YYYY format.")
     .refine(year => {
-        if(!year || year === '') return true; // Handled by optional, but good for explicit check if value exists
+        if(!year || year === '') return true;
         const years = year.split('-');
-        if (years.length !== 2 || !/^\d{4}$/.test(years[0]) || !/^\d{4}$/.test(years[1])) return false; // Basic format check
+        if (years.length !== 2 || !/^\d{4}$/.test(years[0]) || !/^\d{4}$/.test(years[1])) return false;
         return parseInt(years[0]) + 1 === parseInt(years[1]);
-    }, "Academic year range must be consecutive (e.g., 2024-2025).")
+    }, "Academic year range must be consecutive.")
     .optional(),
-  homeroomTeacherId: z.string().cuid("Invalid Homeroom Teacher ID format.").optional().nullable(), // Allow unsetting to null
+  homeroomTeacherId: z.string().cuid("Invalid Homeroom Teacher ID format.").optional().nullable(),
 });
 
-interface RouteContext {
-  params: {
-    classId: string;
-  };
-}
+// REMOVE the custom RouteContext interface
+// interface RouteContext {
+//   params: {
+//     classId: string; 
+//   };
+// }
 
 // GET Handler: Fetch a single class by its Class ID
-export async function GET(req: NextRequest, { params }: RouteContext) {
-  console.log(`[API_CLASS_GET_ID] Received request for classId: ${params.classId}`);
+export async function GET(
+  req: NextRequest, 
+  context: { params: { classId: string } } // CORRECTED SIGNATURE
+) {
+  const { classId } = context.params; // Destructure classId from context.params
+  console.log(`[API_CLASS_GET_ID] Received request for classId: ${classId}`);
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id || session.user.role !== UserRole.SCHOOL_ADMIN) {
@@ -47,8 +52,7 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
     }
     const schoolId = adminSchoolLink.schoolId;
 
-    const { classId } = params;
-    if (!classId) {
+    if (!classId) { // Should not happen if context.params.classId is correctly typed and accessed
       return NextResponse.json({ message: 'Class ID is required' }, { status: 400 });
     }
 
@@ -56,40 +60,32 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
       where: { id: classId },
       include: {
         homeroomTeacher: {
-          select: {
-            id: true,
-            user: {
-              select: { firstName: true, lastName: true }
-            }
-          }
+          select: { id: true, user: { select: { firstName: true, lastName: true }}}
         },
-        _count: { 
-          select: { currentStudents: true } // Corrected student count
-        }
+        _count: { select: { currentStudents: true } }
       }
     });
 
-    if (!classRecord) {
-      return NextResponse.json({ message: 'Class not found' }, { status: 404 });
-    }
-
+    if (!classRecord) { return NextResponse.json({ message: 'Class not found' }, { status: 404 }); }
     if (classRecord.schoolId !== schoolId) {
-      console.warn(`[API_CLASS_GET_ID] AuthZ attempt: Admin ${schoolAdminUserId} (school ${schoolId}) tried to access class ${classId} (school ${classRecord.schoolId})`);
       return NextResponse.json({ message: 'Forbidden: Class does not belong to your school' }, { status: 403 });
     }
-
     return NextResponse.json(classRecord, { status: 200 });
-
   } catch (error: any) {
-    console.error(`[API_CLASS_GET_ID] Error fetching class ${params.classId}:`, error.name, error.message, error.stack);
+    console.error(`[API_CLASS_GET_ID] Error fetching class ${classId}:`, error.name, error.message);
     return NextResponse.json({ message: 'An unexpected error occurred while fetching class details' }, { status: 500 });
   }
 }
 
 // PATCH Handler: Update a class by its Class ID
-export async function PATCH(req: NextRequest, { params }: RouteContext) {
-  console.log(`[API_CLASS_PATCH_ID] Received request to update classId: ${params.classId}`);
+export async function PATCH(
+  req: NextRequest, 
+  context: { params: { classId: string } } // CORRECTED SIGNATURE
+) {
+  const { classId } = context.params; // Destructure classId from context.params
+  console.log(`[API_CLASS_PATCH_ID] Received request to update classId: ${classId}`);
   try {
+    // ... (rest of your PATCH logic remains the same, using the destructured classId)
     const session = await getServerSession(authOptions);
     if (!session?.user?.id || session.user.role !== UserRole.SCHOOL_ADMIN) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
@@ -105,36 +101,26 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     }
     const schoolId = adminSchoolLink.schoolId;
 
-    const { classId } = params;
-    if (!classId) {
-      return NextResponse.json({ message: 'Class ID is required' }, { status: 400 });
-    }
+    if (!classId) { return NextResponse.json({ message: 'Class ID is required' }, { status: 400 });}
 
     const existingClass = await prisma.class.findUnique({
       where: { id: classId },
       select: { schoolId: true } 
     });
 
-    if (!existingClass) {
-      return NextResponse.json({ message: 'Class not found' }, { status: 404 });
-    }
+    if (!existingClass) { return NextResponse.json({ message: 'Class not found' }, { status: 404 });}
     if (existingClass.schoolId !== schoolId) {
-      console.warn(`[API_CLASS_PATCH_ID] AuthZ attempt: Admin ${schoolAdminUserId} (school ${schoolId}) tried to update class ${classId} (school ${existingClass.schoolId})`);
       return NextResponse.json({ message: 'Forbidden: Class does not belong to your school' }, { status: 403 });
     }
 
     const body = await req.json();
-    console.log("[API_CLASS_PATCH_ID] Received body for update:", JSON.stringify(body, null, 2));
-    
     const validation = updateClassApiSchema.safeParse(body);
+
     if (!validation.success) {
-      console.error("[API_CLASS_PATCH_ID] Zod validation failed:", JSON.stringify(validation.error.flatten().fieldErrors, null, 2));
       return NextResponse.json({ message: 'Invalid input', errors: validation.error.flatten().fieldErrors }, { status: 400 });
     }
 
     const dataToUpdateFromSchema = validation.data;
-    
-    // Prepare data for Prisma, only including fields that were actually sent and validated
     const dataForPrisma: Prisma.ClassUpdateInput = {};
     if ('name' in dataToUpdateFromSchema) dataForPrisma.name = dataToUpdateFromSchema.name;
     if ('section' in dataToUpdateFromSchema) dataForPrisma.section = dataToUpdateFromSchema.section === '' ? null : dataToUpdateFromSchema.section;
@@ -143,13 +129,9 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
         dataForPrisma.homeroomTeacherId = dataToUpdateFromSchema.homeroomTeacherId === '' || dataToUpdateFromSchema.homeroomTeacherId === 'none' ? null : dataToUpdateFromSchema.homeroomTeacherId;
     }
     
-    // Additional validation for homeroomTeacherId if it's being set (not unset to null)
     if (dataForPrisma.homeroomTeacherId) { 
       const teacherExists = await prisma.teacher.findFirst({
-        where: {
-          id: dataForPrisma.homeroomTeacherId as string, // Already validated as CUID if present
-          schoolId: schoolId, 
-        }
+        where: { id: dataForPrisma.homeroomTeacherId as string, schoolId: schoolId }
       });
       if (!teacherExists) {
         return NextResponse.json({ message: `Homeroom teacher with ID ${dataForPrisma.homeroomTeacherId} not found in this school.` }, { status: 400 });
@@ -164,27 +146,18 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
       where: { id: classId },
       data: dataForPrisma,
       include: {
-        homeroomTeacher: {
-          select: { id: true, user: { select: { firstName: true, lastName: true } } }
-        },
+        homeroomTeacher: { select: { id: true, user: { select: { firstName: true, lastName: true } } } },
         _count: { select: { currentStudents: true } }
       }
     });
-    
-    console.log(`[API_CLASS_PATCH_ID] Class ${classId} updated successfully.`);
     return NextResponse.json(updatedClass, { status: 200 });
-
   } catch (error: any) {
-    console.error(`[API_CLASS_PATCH_ID] Error updating class ${params.classId}:`, error.name, error.message, error.stack);
+    console.error(`[API_CLASS_PATCH_ID] Error updating class ${classId}:`, error.name, error.message);
+    // ... (rest of PATCH error handling as before) ...
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2025') { return NextResponse.json({ message: 'Class record not found to update.' }, { status: 404 });}
-      if (error.code === 'P2002') { // Unique constraint (schoolId, name, section, academicYear)
-        const target = error.meta?.target as string[] | undefined;
-        return NextResponse.json({ message: `A class with the same name, section, and academic year combination already exists. Constraint on: ${target?.join(', ')}` }, { status: 409 });
-      }
-      if (error.code === 'P2003' && error.meta?.field_name === 'Class_homeroomTeacherId_fkey (index)') { // Example, check exact field_name from error.meta if this occurs
-         return NextResponse.json({ message: 'Invalid Homeroom Teacher ID provided (foreign key constraint).' }, { status: 400 });
-      }
+      if (error.code === 'P2002') { return NextResponse.json({ message: `A class with the same name, section, and academic year combination already exists. Meta: ${JSON.stringify(error.meta?.target)}` }, { status: 409 });}
+      if (error.code === 'P2003') { return NextResponse.json({ message: 'Invalid Homeroom Teacher ID provided (foreign key constraint).' , meta: error.meta }, { status: 400 });}
       return NextResponse.json({ message: `Database error: ${error.code}` }, { status: 500 });
     }
     if (error instanceof z.ZodError) { return NextResponse.json({ message: 'Invalid input (Zod final check)', errors: error.errors }, { status: 400 }); }
@@ -193,9 +166,14 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
 }
 
 // DELETE Handler: Delete a class by its Class ID
-export async function DELETE(req: NextRequest, { params }: RouteContext) {
-  console.log(`[API_CLASS_DELETE_ID] Received request to delete classId: ${params.classId}`);
+export async function DELETE(
+  req: NextRequest, 
+  context: { params: { classId: string } } // CORRECTED SIGNATURE
+) {
+  const { classId } = context.params; // Destructure classId from context.params
+  console.log(`[API_CLASS_DELETE_ID] Received request to delete classId: ${classId}`);
   try {
+    // ... (rest of your DELETE logic remains the same, using the destructured classId) ...
     const session = await getServerSession(authOptions);
     if (!session?.user?.id || session.user.role !== UserRole.SCHOOL_ADMIN) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
@@ -211,46 +189,26 @@ export async function DELETE(req: NextRequest, { params }: RouteContext) {
     }
     const schoolId = adminSchoolLink.schoolId;
 
-    const { classId } = params;
-    if (!classId) {
-      return NextResponse.json({ message: 'Class ID is required' }, { status: 400 });
-    }
+    if (!classId) { return NextResponse.json({ message: 'Class ID is required' }, { status: 400 });}
 
     const classToDelete = await prisma.class.findUnique({
       where: { id: classId },
       select: { schoolId: true } 
     });
 
-    if (!classToDelete) {
-      return NextResponse.json({ message: 'Class not found' }, { status: 404 });
-    }
+    if (!classToDelete) { return NextResponse.json({ message: 'Class not found' }, { status: 404 });}
     if (classToDelete.schoolId !== schoolId) {
-      console.warn(`[API_CLASS_DELETE_ID] AuthZ attempt: Admin ${schoolAdminUserId} (school ${schoolId}) tried to delete class ${classId} (school ${classToDelete.schoolId})`);
       return NextResponse.json({ message: 'Forbidden: Class does not belong to your school' }, { status: 403 });
     }
     
-    // Prisma onDelete rules:
-    // Student.currentClassId is SetNull.
-    // TimetableSlot.classId is Cascade.
-    // Assignment.classId is Cascade.
-    // ClassAnnouncement.classId is Cascade.
-    await prisma.class.delete({
-      where: { id: classId },
-    });
-    
-    console.log(`[API_CLASS_DELETE_ID] Class ${classId} deleted successfully from school ${schoolId}.`);
+    await prisma.class.delete({ where: { id: classId } });
     return NextResponse.json({ message: 'Class deleted successfully' }, { status: 200 });
-
   } catch (error: any) {
-    console.error(`[API_CLASS_DELETE_ID] Error deleting class ${params.classId}:`, error.name, error.message, error.stack);
+    console.error(`[API_CLASS_DELETE_ID] Error deleting class ${classId}:`, error.name, error.message);
+    // ... (rest of DELETE error handling as before) ...
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2025') {
-        return NextResponse.json({ message: 'Class not found to delete.' }, { status: 404 });
-      }
-      if (error.code === 'P2003') { 
-        const fieldName = error.meta?.field_name || 'related records';
-        return NextResponse.json({ message: `Cannot delete class: It is still referenced by other records (field: ${fieldName}) where deletion is restricted. Please remove these dependencies first.` }, { status: 409 });
-      }
+      if (error.code === 'P2025') { return NextResponse.json({ message: 'Class not found to delete.' }, { status: 404 });}
+      if (error.code === 'P2003') { return NextResponse.json({ message: `Cannot delete class: It is still referenced by other records. Field: ${error.meta?.field_name || 'unknown'}` }, { status: 409 });}
       return NextResponse.json({ message: `Database error: ${error.code}. Check server logs.` }, { status: 500 });
     }
     return NextResponse.json({ message: 'An unexpected error occurred while deleting the class' }, { status: 500 });
