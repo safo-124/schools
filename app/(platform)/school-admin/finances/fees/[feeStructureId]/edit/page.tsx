@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { ArrowLeft, Save } from "lucide-react";
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // For fetch error display
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 // Zod schema for editing a fee structure (all fields optional for PATCH)
 const editFeeStructureFormSchema = z.object({
@@ -28,23 +28,23 @@ const editFeeStructureFormSchema = z.object({
   amount: z.preprocess(
     (val) => {
         const strVal = String(val).trim();
-        if (strVal === '') return undefined;
+        if (strVal === '') return undefined; // Treat empty string as undefined for optional number
         const num = parseFloat(strVal);
-        return isNaN(num) ? undefined : num; 
+        return isNaN(num) ? undefined : num; // Let Zod handle if it's still undefined and not optional
     }, 
     z.number({invalid_type_error: "Amount must be a number."})
      .positive("Amount must be positive.")
-     .optional()
+     .optional() // Amount is optional for PATCH
   ),
   academicYear: z.string()
     .regex(/^\d{4}-\d{4}$/, "Academic year format: e.g., 2024-2025.")
     .refine(year => {
-        if(!year || year === '') return true; 
+        if(!year || year === '') return true; // Optional, so empty or undefined is fine
         const years = year.split('-');
         if (years.length !== 2 || !/^\d{4}$/.test(years[0]) || !/^\d{4}$/.test(years[1])) return false;
         return parseInt(years[0]) + 1 === parseInt(years[1]);
     }, "Academic years must be consecutive.")
-    .optional(),
+    .optional().or(z.literal('')).nullable(), // Allow empty string to be cleared to null
   term: z.nativeEnum(TermPeriod).optional().nullable(),
   frequency: z.string().min(1, "Frequency is required.").optional(),
 });
@@ -129,44 +129,39 @@ export default function EditFeeStructurePage() {
   const onSubmit: SubmitHandler<EditFeeStructureFormValues> = async (formData) => {
     const submittingToastId = toast.loading("Updating fee structure...");
     
-    const changedData: Partial<EditFeeStructureFormValues> = {};
+    const apiPayload: Partial<EditFeeStructureFormValues> = {};
     let hasChanges = false;
 
-    (Object.keys(dirtyFields) as Array<keyof EditFeeStructureFormValues>).forEach(key => {
+    for (const key of Object.keys(dirtyFields) as Array<keyof EditFeeStructureFormValues>) {
         if (dirtyFields[key as keyof EditFeeStructureFormValues]) {
             hasChanges = true;
             const typedKey = key as keyof EditFeeStructureFormValues;
             const value = formData[typedKey];
-
-            if (typeof value === 'string' && value === '') {
-                if (typedKey === 'description' || typedKey === 'academicYear' || typedKey === 'code' /*if code existed*/) { 
-                    (changedData as any)[typedKey] = null; 
-                } else {
-                    (changedData as any)[typedKey] = value; 
-                }
-            } else if (typedKey === 'term' && (value === null || value === "none")) {
-                 (changedData as any)[typedKey] = null;
-            } else if (typedKey === 'amount' && value !== undefined) {
-                (changedData as any)[typedKey] = Number(value); 
-            }
-            else if (value !== undefined) { // Handle other types like boolean, or defined strings
-                (changedData as any)[typedKey] = value;
+            
+            if (typedKey === 'amount' && value !== undefined) {
+                (apiPayload as any)[typedKey] = Number(value);
+            } else if ((typedKey === 'description' || typedKey === 'academicYear') && typeof value === 'string' && value.trim() === '') {
+                (apiPayload as any)[typedKey] = null; 
+            } else if (typedKey === 'term' && (value === null || value === "none" as any)) { 
+                 (apiPayload as any)[typedKey] = null;
+            } else if (value !== undefined) { 
+                (apiPayload as any)[typedKey] = value;
             }
         }
-    });
-    
+    }
+
     if (!hasChanges) {
-        toast.info("No changes were made to submit.", { id: submittingToastId });
+        toast.info("No changes were made.", { id: submittingToastId });
         return;
     }
     
-    console.log("Submitting Updated Fee Structure Data to API:", JSON.stringify(changedData, null, 2));
+    console.log("Submitting Updated Fee Structure Data to API:", JSON.stringify(apiPayload, null, 2));
 
     try {
       const response = await fetch(`/api/school-admin/finances/fee-structures/${feeStructureId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(changedData), 
+        body: JSON.stringify(apiPayload), 
       });
 
       const result = await response.json();
@@ -181,21 +176,22 @@ export default function EditFeeStructurePage() {
         }
         throw new Error(errorMessage);
       }
-      toast.success(`Fee Structure "${result.name}" updated successfully!`, { id: submittingToastId });
+      toast.success(`Fee Structure "${result.name}" updated!`, { id: submittingToastId });
       setOriginalFeeStructure(result);
-      reset({ // Reset form with newly saved data
+      
+      const resetValues: EditFeeStructureFormValues = {
         name: result.name || '',
-        description: result.description || '',
+        description: result.description || null,
         amount: result.amount ? Number(result.amount.toString()) : undefined,
-        academicYear: result.academicYear || '',
+        academicYear: result.academicYear || null,
         term: result.term || null,
         frequency: result.frequency || '',
-      }); 
-      setTimeout(() => {
-        router.push('/school-admin/finances/fees'); 
-      }, 1500);
+      };
+      reset(resetValues); 
+      
+      setTimeout(() => { router.push('/school-admin/finances/fees'); }, 1500);
     } catch (err: any) {
-      toast.error("Fee Structure update failed", { id: submittingToastId, description: err.message });
+      toast.error("Update failed", { id: submittingToastId, description: err.message });
       console.error("Update fee structure error (client):", err);
     }
   };
@@ -240,12 +236,7 @@ export default function EditFeeStructurePage() {
                 </Button>
             </div>
         </CardHeader>
-        <CardContent>
-            <Alert variant="destructive">
-                <AlertTitle>Failed to Load Data</AlertTitle>
-                <AlertDescription>{fetchError}</AlertDescription>
-            </Alert>
-        </CardContent>
+        <CardContent><Alert variant="destructive"><AlertTitle>Failed to Load Data</AlertTitle><AlertDescription>{fetchError}</AlertDescription></Alert></CardContent>
       </Card>
      );
   }
