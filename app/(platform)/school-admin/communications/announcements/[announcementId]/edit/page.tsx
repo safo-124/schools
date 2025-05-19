@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { z } from 'zod';
 import { useForm, SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { SchoolAnnouncement as PrismaSchoolAnnouncement, } from '@prisma/client'; // For type
+import { SchoolAnnouncement as PrismaSchoolAnnouncement, User as PrismaUser } from '@prisma/client';
 import { format } from "date-fns";
 
 // Shadcn/ui components
@@ -22,9 +22,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { ArrowLeft, Save, CalendarIcon } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'; // For fetch error display
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-// Zod schema for the Edit Announcement form (all fields optional for PATCH)
+// Zod schema for the Edit Announcement form
 const editAnnouncementFormSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters long.").optional(),
   content: z.string().min(10, "Content must be at least 10 characters long.").optional(),
@@ -44,9 +44,7 @@ const editAnnouncementFormSchema = z.object({
 
 type EditAnnouncementFormValues = z.infer<typeof editAnnouncementFormSchema>;
 
-// Type for data fetched from API
 interface AnnouncementDataToEdit extends PrismaSchoolAnnouncement {
-  // If your API includes createdByAdmin with user details, include it here
   createdByAdmin?: {
     user: { firstName: string | null; lastName: string | null; };
   } | null;
@@ -58,8 +56,8 @@ export default function EditAnnouncementPage() {
   const announcementId = params.announcementId as string;
 
   const [initialLoading, setInitialLoading] = useState(true);
-  const [originalAnnouncement, setOriginalAnnouncement] = useState<AnnouncementDataToEdit | null>(null); // State to store fetched data
-  const [fetchError, setFetchError] = useState<string | null>(null); // State for fetch error
+  const [originalAnnouncement, setOriginalAnnouncement] = useState<AnnouncementDataToEdit | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const {
     register,
@@ -70,12 +68,7 @@ export default function EditAnnouncementPage() {
   } = useForm<EditAnnouncementFormValues>({
     resolver: zodResolver(editAnnouncementFormSchema),
     defaultValues: {
-        title: '',
-        content: '',
-        publishDate: null,
-        expiryDate: null,
-        audience: '',
-        isPublished: true,
+        title: '', content: '', publishDate: null, expiryDate: null, audience: '', isPublished: true,
     },
   });
 
@@ -89,7 +82,7 @@ export default function EditAnnouncementPage() {
 
     const fetchAnnouncementData = async () => {
       setInitialLoading(true);
-      setFetchError(null); // Clear previous fetch errors
+      setFetchError(null);
       try {
         const response = await fetch(`/api/school-admin/communications/announcements/${announcementId}`);
         if (!response.ok) {
@@ -97,13 +90,10 @@ export default function EditAnnouncementPage() {
           throw new Error(errorData.message || `Failed to fetch announcement data: ${response.statusText}`);
         }
         const announcementData: AnnouncementDataToEdit = await response.json();
-        
-        if (!announcementData) { // Handle case where announcement is not found by API but response was ok (e.g. API returns null)
+        if (!announcementData) {
             throw new Error("Announcement data not found from API.");
         }
-
         setOriginalAnnouncement(announcementData); 
-        
         reset({
           title: announcementData.title || '',
           content: announcementData.content || '',
@@ -113,7 +103,7 @@ export default function EditAnnouncementPage() {
           isPublished: announcementData.isPublished,
         });
       } catch (err: any) {
-        setFetchError(err.message); // Set fetch error state
+        setFetchError(err.message);
         toast.error("Failed to load announcement data", { description: err.message });
         console.error("Fetch announcement data error:", err);
       } finally {
@@ -126,25 +116,33 @@ export default function EditAnnouncementPage() {
   const onSubmit: SubmitHandler<EditAnnouncementFormValues> = async (formData) => {
     const submittingToastId = toast.loading("Updating announcement...");
     
-    const changedData: Partial<EditAnnouncementFormValues & { publishDate?: string|null, expiryDate?: string|null }> = {};
+    // Explicitly type the payload for the API
+    const apiPayload: {
+        title?: string;
+        content?: string;
+        publishDate?: string | null;
+        expiryDate?: string | null;
+        audience?: string | null;
+        isPublished?: boolean;
+    } = {};
     let hasChanges = false;
 
     (Object.keys(dirtyFields) as Array<keyof EditAnnouncementFormValues>).forEach(key => {
         if (dirtyFields[key]) {
             hasChanges = true;
-            const typedKey = key as keyof EditAnnouncementFormValues;
-            const value = formData[typedKey];
+            const value = formData[key]; // Type is Date | string | boolean | null | undefined
 
-            if (typedKey === 'publishDate' || typedKey === 'expiryDate') {
-                changedData[typedKey] = value ? (value as Date).toISOString() : null;
+            if (key === 'publishDate' || key === 'expiryDate') {
+                // Assign to explicitly typed apiPayload properties
+                apiPayload[key] = value ? (value as Date).toISOString() : null;
             } else if (typeof value === 'string' && value === '') {
-                if (typedKey === 'audience') { 
-                    (changedData as any)[typedKey] = null; 
+                if (key === 'audience') {
+                    (apiPayload as any)[key] = null; 
                 } else {
-                    (changedData as any)[typedKey] = value;
+                    (apiPayload as any)[key] = value; 
                 }
             } else if (value !== undefined) {
-                (changedData as any)[typedKey] = value;
+                (apiPayload as any)[key] = value;
             }
         }
     });
@@ -153,12 +151,12 @@ export default function EditAnnouncementPage() {
         toast.info("No changes were made to submit.", { id: submittingToastId });
         return;
     }
-    
+        
     try {
       const response = await fetch(`/api/school-admin/communications/announcements/${announcementId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(changedData),
+        body: JSON.stringify(apiPayload), // Send the explicitly typed and constructed apiPayload
       });
       const result = await response.json();
       if (!response.ok) {
@@ -172,10 +170,8 @@ export default function EditAnnouncementPage() {
         throw new Error(errorMessage);
       }
       toast.success("Announcement updated successfully!", { id: submittingToastId });
-      // Update form with newly saved data to clear dirtyFields and reflect server state
-      // Also update originalAnnouncement to reflect the new state if staying on page
       setOriginalAnnouncement(result); 
-      reset({
+      reset({ // Reset form with the new data from result
         title: result.title || '',
         content: result.content || '',
         publishDate: result.publishDate ? new Date(result.publishDate) : null,
@@ -219,7 +215,7 @@ export default function EditAnnouncementPage() {
     );
   }
   
-  if (fetchError && !initialLoading) { // Show error if fetch failed after loading state
+  if (fetchError && !initialLoading) {
      return (
       <Card className="w-full max-w-lg mx-auto">
         <CardHeader>
@@ -240,7 +236,7 @@ export default function EditAnnouncementPage() {
      );
   }
 
-  if (!originalAnnouncement && !initialLoading && !fetchError) { // Data came back as null/undefined but no explicit error
+  if (!originalAnnouncement && !initialLoading && !fetchError) {
      return (
       <Card className="w-full max-w-lg mx-auto">
         <CardHeader><CardTitle>Announcement Not Found</CardTitle></CardHeader>
@@ -253,7 +249,6 @@ export default function EditAnnouncementPage() {
       </Card>
      );
   }
-
 
   return (
     <Card className="w-full max-w-lg mx-auto">
