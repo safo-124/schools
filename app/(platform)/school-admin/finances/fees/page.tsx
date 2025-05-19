@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { z } from 'zod';
-import { useForm, SubmitHandler, Controller, Resolver } from 'react-hook-form'; // Import Resolver
+import { useForm, SubmitHandler, Controller, Resolver } from 'react-hook-form'; 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FeeStructure as PrismaFeeStructure, TermPeriod } from '@prisma/client';
 
@@ -37,29 +37,22 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { PlusCircle, Edit, DollarSign, Trash2 } from "lucide-react"; // Added Trash2 for DeleteButton
+import { PlusCircle, Edit, DollarSign, Trash2 } from "lucide-react";
 
 // Import the custom DeleteFeeStructureButton component
-import { DeleteFeeStructureButton } from '@/components/school-admin/finances/DeleteFeeStructureButton'; // Adjust path if needed
+import { DeleteFeeStructureButton } from '@/components/school-admin/finances/DeleteFeeStructureButton';
 
 type FeeStructure = PrismaFeeStructure;
 
-// Zod schema for the Add Fee Structure form
 const feeStructureFormSchema = z.object({
-  name: z.string().min(3, "Fee structure name is required (e.g., Term 1 Tuition - Grade 1)."),
+  name: z.string().min(3, "Fee structure name is required."),
   description: z.string().optional().or(z.literal('')).nullable(),
   amount: z.preprocess(
-    (val) => {
-      const strVal = String(val).trim();
-      if (strVal === '') return undefined;
-      const num = parseFloat(strVal);
-      return isNaN(num) ? undefined : num;
-    },
-    z.number({required_error: "Amount is required.", invalid_type_error: "Amount must be a number."})
-     .positive("Amount must be positive.")
+    (val) => (val === "" || val === null || val === undefined || isNaN(parseFloat(String(val)))) ? undefined : parseFloat(String(val)), 
+    z.number({required_error: "Amount is required.", invalid_type_error: "Amount must be a number."}).positive("Amount must be positive.")
   ),
   academicYear: z.string()
-    .regex(/^\d{4}-\d{4}$/, "Academic year format: e.g., 2024-2025.") // Corrected example
+    .regex(/^\d{4}-\d{4}$/, "Academic year format: e.g., 2024-2025.")
     .refine(year => {
         if(!year || year === '') return false; 
         const years = year.split('-');
@@ -86,9 +79,9 @@ export default function ManageFeeStructuresPage() {
     handleSubmit,
     reset,
     control,
-    formState: { errors, isSubmitting }, // Renamed isFormSubmitting to isSubmitting for consistency
+    formState: { errors, isSubmitting }, 
   } = useForm<FeeStructureFormValues>({
-    resolver: zodResolver(feeStructureFormSchema) as Resolver<FeeStructureFormValues, any>, // <<< TYPE BYPASS APPLIED HERE
+    resolver: zodResolver(feeStructureFormSchema) as Resolver<FeeStructureFormValues, any>, // TYPE BYPASS
     defaultValues: {
       name: '',
       description: '',
@@ -129,7 +122,7 @@ export default function ManageFeeStructuresPage() {
       const dataToSend = {
         ...formData,
         amount: Number(formData.amount), 
-        term: formData.term === "none" || formData.term === '' || formData.term === undefined ? null : formData.term,
+        term: formData.term || null, // If formData.term is undefined or null, send null.
         description: formData.description === '' ? null : formData.description,
       };
       const response = await fetch('/api/school-admin/finances/fee-structures', {
@@ -142,7 +135,7 @@ export default function ManageFeeStructuresPage() {
         throw new Error(result.message || "Failed to create fee structure.");
       }
       toast.success("Fee structure created successfully!", { id: submittingToastId });
-      reset({ // Reset with default values for the add form
+      reset({
         name: '', description: '', amount: undefined, 
         academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
         term: null, frequency: '',
@@ -157,11 +150,10 @@ export default function ManageFeeStructuresPage() {
   
   const formatAmount = (amount: any) => {
     if (amount === null || amount === undefined) return 'N/A';
-    // Prisma Decimal can be an object, ensure it's converted to number for formatting
     return new Intl.NumberFormat('en-GH', { style: 'currency', currency: 'GHS' }).format(Number(amount.toString()));
   };
 
-  const handleActionSuccess = () => { // For DeleteFeeStructureButton callback
+  const handleActionSuccess = () => {
     toast.info("Refreshing fee structures list...");
     fetchFeeStructures(false);
   };
@@ -185,7 +177,7 @@ export default function ManageFeeStructuresPage() {
           <CardDescription>Define and manage different types of fees for your school.</CardDescription>
         </div>
         <Dialog open={isAddModalOpen} onOpenChange={(open) => {
-            if (!open) reset({ name: '', description: '', amount: undefined, academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`, term: null, frequency: '' });
+            if (!open) reset({name: '', description: '', amount: undefined, academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,term: null, frequency: ''});
             setIsAddModalOpen(open);
         }}>
           <DialogTrigger asChild>
