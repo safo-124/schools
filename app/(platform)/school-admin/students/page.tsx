@@ -1,9 +1,9 @@
 // app/(platform)/school-admin/students/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react'; // Added useCallback
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-// useRouter is not directly needed here if DeleteStudentButton handles its own refresh or parent calls fetchStudents
+import { useRouter } from 'next/navigation';
 import { User as PrismaUser, Student as PrismaStudent, Class as PrismaClass } from '@prisma/client';
 
 // Import Shadcn/ui components
@@ -20,29 +20,41 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { PlusCircle, Edit, Eye, Users as UsersIcon } from "lucide-react";
+import { Switch } from "@/components/ui/switch"; // For the active/inactive filter toggle
+import { Label } from "@/components/ui/label";   // For the toggle label
+import { PlusCircle, Edit, Eye, Users as UsersIcon, RotateCcw } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 
-import { DeleteStudentButton } from '@/components/school-admin/students/DeleteStudentButton';
+// Import the custom ToggleStudentStatusButton component
+import { ToggleStudentStatusButton } from '@/components/school-admin/students/ToggleStudentStatusButton'; // Adjust path
 
 interface StudentData extends PrismaStudent {
-  user?: Pick<PrismaUser, 'email' | 'isActive' | 'profilePicture'> | null;
+  user?: Pick<PrismaUser, 'email' | 'isActive' | 'profilePicture'> | null; // user.isActive is linked user account status
   currentClass?: Pick<PrismaClass, 'id' | 'name' | 'section'> | null;
 }
 
 export default function ManageStudentsPage() {
+  const router = useRouter();
   const [students, setStudents] = useState<StudentData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // isPending from useTransition is not needed here anymore if DeleteStudentButton handles its own transition
+  const [fetchAttempted, setFetchAttempted] = useState(false);
+  const [showInactive, setShowInactive] = useState(false); // State for toggling view
 
-  // useCallback ensures fetchStudents function identity is stable across re-renders
-  // unless its dependencies change (none in this case, but good practice).
-  const fetchStudents = useCallback(async () => {
-    setIsLoading(true);
+  const fetchStudents = useCallback(async (isInitialLoad = false) => {
+    if(isInitialLoad) setIsLoading(true);
+    setFetchAttempted(false);
     setError(null);
     try {
-      const response = await fetch('/api/school-admin/students');
+      // API now fetches based on activeOnly parameter if not specified,
+      // or fetches all if activeOnly is false. Let's adjust API or client call.
+      // For now, client decides what to fetch based on showInactive state.
+      const apiUrl = showInactive ? '/api/school-admin/students' : '/api/school-admin/students?activeOnly=true';
+      console.log(`[STUDENTS_PAGE] Fetching students from: ${apiUrl}`);
+      
+      const response = await fetch(apiUrl); 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || `Error: ${response.status} ${response.statusText}`);
@@ -51,49 +63,51 @@ export default function ManageStudentsPage() {
       setStudents(data);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch students.');
+      toast.error("Failed to load students", { description: err.message });
       console.error("Fetch students error:", err);
+      setStudents([]);
     } finally {
-      setIsLoading(false);
+      if(isInitialLoad) setIsLoading(false);
+      setFetchAttempted(true);
     }
-  }, []); // Empty dependency array for useCallback
+  }, [showInactive]); // Re-fetch when showInactive changes
 
   useEffect(() => {
-    fetchStudents();
-  }, [fetchStudents]); // fetchStudents is now a dependency
+    fetchStudents(true);
+  }, [fetchStudents]); // fetchStudents itself depends on showInactive
 
-  const handleStudentDeleted = () => {
-    // This function is called by DeleteStudentButton on success.
-    // We re-fetch the students list to update the UI.
-    console.log("Student deleted, re-fetching student list...");
-    fetchStudents(); 
-    // Optionally, you could show a page-level success message here too.
+  const handleActionSuccess = () => {
+    toast.info("Refreshing student list...");
+    fetchStudents(false); 
   };
 
-
-  if (isLoading && students.length === 0) {
-    return (
-      <Card>
-        <CardHeader><CardTitle>Manage Students</CardTitle><CardDescription>Loading student data...</CardDescription></CardHeader>
-        <CardContent><p>Loading...</p></CardContent>
-      </Card>
-    );
-  }
-
-  if (error && students.length === 0) { // Only show full page error if initial load fails
-    return (
-      <Card>
-        <CardHeader><CardTitle>Manage Students</CardTitle><CardDescription>Error loading student data</CardDescription></CardHeader>
-        <CardContent><Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert></CardContent>
-      </Card>
-    );
-  }
+  const renderSkeletons = () => Array.from({ length: 5 }).map((_, index) => (
+    <TableRow key={`skeleton-student-${index}`}>
+        <TableCell><Skeleton className="h-9 w-9 rounded-full" /></TableCell>
+        <TableCell><Skeleton className="h-6 w-32" /></TableCell>
+        <TableCell className="hidden sm:table-cell"><Skeleton className="h-6 w-20" /></TableCell>
+        <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+        <TableCell className="hidden md:table-cell"><Skeleton className="h-6 w-40" /></TableCell>
+        <TableCell><Skeleton className="h-6 w-20" /></TableCell> {/* Enrollment Status */}
+        <TableCell><Skeleton className="h-6 w-20" /></TableCell> {/* User Account Status */}
+        <TableCell className="text-right"><Skeleton className="h-8 w-24" /></TableCell>
+    </TableRow>
+  ));
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <CardTitle>Manage Students</CardTitle>
           <CardDescription>View, add, and manage students in your school.</CardDescription>
+        </div>
+        <div className="flex items-center space-x-2">
+            <Switch
+                id="show-inactive-students"
+                checked={showInactive}
+                onCheckedChange={setShowInactive}
+            />
+            <Label htmlFor="show-inactive-students" className="text-sm">Show Inactive Students</Label>
         </div>
         <Button asChild>
           <Link href="/school-admin/students/new"> 
@@ -102,36 +116,51 @@ export default function ManageStudentsPage() {
         </Button>
       </CardHeader>
       <CardContent>
-        {/* Display non-critical errors (e.g., from a failed delete that didn't stop page from loading) */}
-        {error && !isLoading && students.length > 0 && (
+        {error && !isLoading && students.length === 0 && fetchAttempted && (
             <Alert variant="destructive" className="mb-4">
-            <AlertTitle>An Action Error Occurred</AlertTitle>
+            <AlertTitle>Error Loading Students</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
             </Alert>
         )}
-        {students.length === 0 && !isLoading ? (
+        {(isLoading && !fetchAttempted) ? (
+             <Table>
+              <TableCaption>Loading student data...</TableCaption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[60px]">Avatar</TableHead><TableHead>Name</TableHead>
+                  <TableHead className="hidden sm:table-cell">Student ID</TableHead><TableHead>Class</TableHead>
+                  <TableHead className="hidden md:table-cell">Email</TableHead>
+                  <TableHead>Enroll. Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">User Acc. Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>{renderSkeletons()}</TableBody>
+            </Table>
+        ) : !isLoading && students.length === 0 && fetchAttempted ? (
           <div className="text-center py-10">
             <UsersIcon className="mx-auto h-12 w-12 text-muted-foreground" />
-            <h3 className="mt-2 text-sm font-medium">No students found</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Get started by adding a new student.</p>
+            <h3 className="mt-2 text-sm font-medium">No {showInactive ? "inactive" : "active"} students found.</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+                {showInactive ? "There are no students marked as inactive." : "Get started by adding a new student or check the 'Show Inactive Students' filter."}
+            </p>
           </div>
         ) : (
           <Table>
-            <TableCaption>A list of all students in your school.</TableCaption>
+            <TableCaption>A list of {showInactive ? "inactive" : "active"} students in your school.</TableCaption>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[60px]">Avatar</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead className="hidden sm:table-cell">Student ID</TableHead>
-                <TableHead>Class</TableHead>
+                <TableHead className="w-[60px]">Avatar</TableHead><TableHead>Name</TableHead>
+                <TableHead className="hidden sm:table-cell">Student ID</TableHead><TableHead>Class</TableHead>
                 <TableHead className="hidden md:table-cell">Email</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Enroll. Status</TableHead>
+                <TableHead className="hidden lg:table-cell">User Acc. Status</TableHead>
                 <TableHead className="text-right w-[120px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {students.map((student) => (
-                <TableRow key={student.id}>
+                <TableRow key={student.id} className={!student.isActive ? "opacity-60" : ""}>
                   <TableCell>
                     <Avatar className="h-9 w-9">
                       <AvatarImage src={student.profilePictureUrl || student.user?.profilePicture || undefined} alt={`${student.firstName} ${student.lastName}`} />
@@ -151,12 +180,23 @@ export default function ManageStudentsPage() {
                       : 'N/A'}
                   </TableCell>
                   <TableCell className="hidden md:table-cell">{student.user?.email || 'N/A'}</TableCell>
-                  <TableCell>
+                  <TableCell> {/* Student Enrollment Status */}
                     <Badge variant={student.isActive ? 'default' : 'outline'}
-                           className={student.isActive ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'border-muted-foreground text-muted-foreground'}
+                           className={student.isActive ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'border-orange-400 text-orange-600'}
                     >
-                      {student.isActive ? 'Active' : 'Withdrawn'}
+                      {student.isActive ? 'Active' : 'Inactive'}
                     </Badge>
+                  </TableCell>
+                   <TableCell className="hidden lg:table-cell"> {/* Linked User Account Status */}
+                    {student.user ? (
+                        <Badge variant={student.user.isActive ? 'default' : 'outline'}
+                               className={student.user.isActive ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'border-muted-foreground text-muted-foreground'}
+                        >
+                        {student.user.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                    ) : (
+                        <Badge variant="secondary">No Account</Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-right space-x-1">
                     <Button variant="ghost" size="icon" className="mr-1" disabled title="View Details (soon)">
@@ -167,10 +207,9 @@ export default function ManageStudentsPage() {
                         <Edit className="h-4 w-4" />
                       </Link>
                     </Button>
-                    <DeleteStudentButton 
-                        studentId={student.id}
-                        studentName={`${student.firstName} ${student.lastName}`}
-                        onDeleteSuccess={handleStudentDeleted} // Pass the re-fetch function
+                    <ToggleStudentStatusButton 
+                        student={student} // Pass the whole student object or necessary parts
+                        onActionSuccess={handleActionSuccess}
                     />
                   </TableCell>
                 </TableRow>
@@ -180,9 +219,7 @@ export default function ManageStudentsPage() {
         )}
       </CardContent>
       <CardFooter>
-        <div className="text-xs text-muted-foreground">
-          Total students: <strong>{students.length}</strong>
-        </div>
+        <div className="text-xs text-muted-foreground">Total {showInactive ? "inactive" : "active"} students: <strong>{students.length}</strong></div>
       </CardFooter>
     </Card>
   );

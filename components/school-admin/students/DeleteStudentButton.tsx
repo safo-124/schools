@@ -1,7 +1,7 @@
 // components/school-admin/students/DeleteStudentButton.tsx
 "use client";
 
-import React, { useState, useTransition } from 'react'; // Ensure useTransition is imported
+import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
@@ -16,67 +16,71 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Trash2 } from 'lucide-react';
+import { UserX, Trash2 } from 'lucide-react'; // Changed icon to UserX for deactivate
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-// import { toast } from "sonner";
+import { toast } from "sonner";
 
 interface DeleteStudentButtonProps {
   studentId: string;
   studentName: string;
-  onDeleteSuccess?: () => void; // Callback to trigger re-fetch in parent
+  isActive: boolean; // Add current status to tailor messages and actions
+  onActionSuccess?: () => void; 
 }
 
-export function DeleteStudentButton({ studentId, studentName, onDeleteSuccess }: DeleteStudentButtonProps) {
+export function DeleteStudentButton({ studentId, studentName, isActive, onActionSuccess }: DeleteStudentButtonProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // Renamed from isDeleting
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition(); // For router.refresh
+  const [isPending, startTransition] = useTransition();
 
-  const handleDelete = async () => {
-    setIsDeleting(true);
+  const actionText = isActive ? "Deactivate" : "Reactivate";
+  const processingText = isActive ? "Deactivating..." : "Reactivating...";
+
+  const handleSubmitAction = async () => {
+    setIsProcessing(true);
     setError(null);
+    // If reactivating, the API should handle setting isActive: true via PATCH
+    // For now, this button is focused on deactivation (soft delete via API's DELETE verb)
+    // To make it a true toggle, we'd need a PATCH call for reactivation.
+    // For this iteration, we assume the DELETE endpoint *always* means deactivation.
+    
+    const toastId = toast.loading(`${processingText} student: "${studentName}"...`);
+
     try {
+      // The API route DELETE /api/school-admin/students/[studentId] now performs deactivation
       const response = await fetch(`/api/school-admin/students/${studentId}`, {
-        method: 'DELETE',
+        method: 'DELETE', // This verb now triggers deactivation on the backend
       });
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || 'Failed to delete student.');
+        throw new Error(result.message || `Failed to ${actionText.toLowerCase()} student.`);
       }
 
-      // toast.success(`Student "${studentName}" deleted successfully.`);
+      toast.success(`Student "${studentName}" ${actionText.toLowerCase()}d successfully.`, { id: toastId });
       
-      // Call the onDeleteSuccess callback passed from the parent page
-      // This will typically trigger fetchStudents() in ManageStudentsPage
-      if (onDeleteSuccess) {
-        onDeleteSuccess();
+      if (onActionSuccess) {
+        onActionSuccess(); 
       }
       
-      // You can also call router.refresh() if parts of your page depend on server data
-      // that isn't re-fetched by the onDeleteSuccess callback's logic.
-      // For a client component managing its own list state via fetch,
-      // explicitly calling the fetch function via callback is more direct.
       startTransition(() => {
-        router.refresh(); // Good for re-validating any server-side aspects of the route
+        router.refresh(); 
       });
-
       setIsOpen(false);
 
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred.');
-      // toast.error(err.message || 'Failed to delete student.');
-      console.error("Delete student error:", err);
+      setError(err.message || `An unexpected error occurred during ${actionText.toLowerCase()}.`);
+      toast.error(`Failed to ${actionText.toLowerCase()} "${studentName}"`, { id: toastId, description: err.message });
+      console.error(`${actionText} student error:`, err);
     } finally {
-      setIsDeleting(false);
+      setIsProcessing(false);
     }
   };
 
-  // Reset error when dialog is closed manually
   const handleOpenChange = (open: boolean) => {
     if (!open) {
-      setError(null);
+      setError(null); 
     }
     setIsOpen(open);
   };
@@ -84,34 +88,41 @@ export function DeleteStudentButton({ studentId, studentName, onDeleteSuccess }:
   return (
     <AlertDialog open={isOpen} onOpenChange={handleOpenChange}>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80" title="Delete Student">
-          <Trash2 className="h-4 w-4" />
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          className={isActive ? "text-destructive hover:text-destructive/80" : "text-green-600 hover:text-green-700/80"}
+          title={isActive ? "Deactivate Student" : "Reactivate Student (Not implemented in this button)"}
+          // For this iteration, button only performs deactivation.
+          // A true toggle would need separate logic or API endpoint for reactivation.
+          // We will assume for now this button is primarily for deactivation (isActive=true student)
+        >
+          {isActive ? <UserX className="h-4 w-4" /> : <Trash2 className="h-4 w-4" /> /* Show Trash2 if already inactive, though ideally button would be "Activate" then */}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+          <AlertDialogTitle>Are you sure you want to {actionText.toLowerCase()}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete the student profile for 
-            <strong> {studentName}</strong>. 
-            Any associated grades, attendance records, and enrollment information might also be affected based on database cascade rules.
-            The linked user account (if any) will NOT be deleted by this action.
+            This will mark the student <strong>{studentName}</strong> as {isActive ? "inactive" : "active"}.
+            {isActive && " They will not appear in active lists and their user account (if any) will also be deactivated. All their existing records (grades, attendance, invoices) will be preserved."}
+            {!isActive && " Reactivating will make them appear in active lists again and reactivate their user account (if any). (Note: Reactivation via this button might need separate API logic if current DELETE endpoint only deactivates)."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error && (
           <Alert variant="destructive" className="mt-2">
-            <AlertTitle>Deletion Failed</AlertTitle>
+            <AlertTitle>{actionText} Failed</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={isProcessing || isPending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            onClick={handleDelete}
-            disabled={isDeleting || isPending} // Disable if deleting or page transition is pending
-            className="bg-destructive hover:bg-destructive/90"
+            onClick={handleSubmitAction}
+            disabled={isProcessing || isPending}
+            className={isActive ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700/90"}
           >
-            {isDeleting || isPending ? 'Deleting...' : 'Yes, Delete Student'}
+            {isProcessing || isPending ? processingText : `Yes, ${actionText}`}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
