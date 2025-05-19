@@ -1,7 +1,7 @@
 // app/api/school-admin/finances/invoices/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/db';
 import { UserRole, Prisma, TermPeriod, PaymentStatus } from '@prisma/client';
 import { z } from 'zod';

@@ -1,9 +1,9 @@
 // app/api/school-admin/teachers/[teacherId]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'; // Adjust path as needed
+import { authOptions } from '@/lib/auth';// Adjust path as needed
 import prisma from '@/lib/db'; // Using shared Prisma instance
-import { UserRole, Prisma, TermPeriod } from '@prisma/client'; // Added TermPeriod just in case, though not used in this teacher schema
+import { UserRole, Prisma} from '@prisma/client'; // Added TermPeriod just in case, though not used in this teacher schema
 import { z } from 'zod';
 
 // Zod schema for updating a teacher (all fields optional for PATCH)

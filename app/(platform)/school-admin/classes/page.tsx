@@ -6,11 +6,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
     Class as PrismaClass, 
-    Teacher as PrismaTeacher, // For SimpleTeacher type if used in dropdown
+     // For SimpleTeacher type if used in dropdown
     User as PrismaUser,
-    TermPeriod // For Add Class form Zod schema
+    // For Add Class form Zod schema
 } from '@prisma/client';
-import { format } from "date-fns";
+
 import { z } from 'zod';
 import { useForm, SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -19,7 +19,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from '@/components/ui/textarea'; // For Add Modal
+
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import {
   Table,
@@ -43,7 +43,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // For Add Modal
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { PlusCircle, Edit, Eye, BookOpenText, CalendarIcon } from "lucide-react"; // Added CalendarIcon
+import { PlusCircle, Edit, Eye, BookOpenText } from "lucide-react"; // Added CalendarIcon
 
 // Import the custom DeleteClassButton component
 import { DeleteClassButton } from '@/components/school-admin/classes/DeleteClassButton'; // Adjust path if needed

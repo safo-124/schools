@@ -11,7 +11,6 @@ import {
     DayOfWeek, 
     Class as PrismaClass, 
     Subject as PrismaSubject, 
-    Teacher as PrismaTeacher,
     User as PrismaUser,
     TimetableSlot as PrismaTimetableSlot
 } from '@prisma/client';

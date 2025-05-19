@@ -37,7 +37,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { PlusCircle, Edit, Trash2, DollarSign, Eye } from "lucide-react";
+import { PlusCircle, Edit, DollarSign} from "lucide-react";
 
 // Import the custom DeleteFeeStructureButton component
 import { DeleteFeeStructureButton } from '@/components/school-admin/finances/DeleteFeeStructureButton'; // Adjust path if needed

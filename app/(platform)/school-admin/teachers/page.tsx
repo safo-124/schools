@@ -29,9 +29,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+
 } from "@/components/ui/alert-dialog";
-import { PlusCircle, Edit, Trash2, Eye, UserCircle, Users as UsersIcon } from "lucide-react"; // Renamed Users to UsersIcon to avoid conflict
+import { PlusCircle, Edit, Trash2, Users as UsersIcon } from "lucide-react"; // Renamed Users to UsersIcon to avoid conflict
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 // import { toast } from "sonner"; // Optional, for toast notifications
 

@@ -1,7 +1,7 @@
 // app/api/school-admin/classes/[classId]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';;
 import prisma from '@/lib/db';
 import { UserRole, Prisma } from '@prisma/client'; // TermPeriod removed as not directly used in this Zod schema
 import { z } from 'zod';

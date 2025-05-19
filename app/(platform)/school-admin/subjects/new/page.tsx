@@ -1,7 +1,7 @@
 // app/(platform)/school-admin/subjects/new/page.tsx
 "use client";
 
-import React, { useState } from 'react';
+
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { z } from 'zod';

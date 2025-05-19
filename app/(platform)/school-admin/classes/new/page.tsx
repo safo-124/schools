@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { z } from 'zod';
 import { useForm, SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { User as PrismaUser, Teacher as PrismaTeacher } from '@prisma/client'; // For Teacher type
+
 
 // Import Shadcn/ui components
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton"; // For loading state
 import { toast } from "sonner"; // For notifications
-import { ArrowLeft, CheckCircle, XCircle } from "lucide-react";
+import { ArrowLeft} from "lucide-react";
 
 // Zod schema for the form (client-side)
 const createClassFormSchema = z.object({

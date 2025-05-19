@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Megaphone, Mail, MessageSquareText, Settings2 } from 'lucide-react'; // Example icons
+import { Megaphone, Mail, MessageSquareText } from 'lucide-react'; // Example icons
 
 // This page can be a Server Component as it's primarily for navigation
 export default async function CommunicationsPage() {

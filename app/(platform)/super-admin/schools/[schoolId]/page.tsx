@@ -12,7 +12,7 @@ import { ArrowLeft, Edit3, Users as UsersIcon } from 'lucide-react';
 
 // For session checking on server components
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'; // Adjust path if needed
+import { authOptions } from '@/lib/auth';// Adjust path if needed
 
 // Import custom components
 import { SchoolStatusToggleButton } from '@/components/super-admin/SchoolStatusToggleButton'; // Adjust path

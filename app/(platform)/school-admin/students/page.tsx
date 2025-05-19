@@ -22,7 +22,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from "@/components/ui/switch"; // For the active/inactive filter toggle
 import { Label } from "@/components/ui/label";   // For the toggle label
-import { PlusCircle, Edit, Eye, Users as UsersIcon, RotateCcw } from "lucide-react";
+import { PlusCircle, Edit, Eye, Users as UsersIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";

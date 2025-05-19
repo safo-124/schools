@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { useForm, SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { format } from "date-fns";
-import { Gender, Class as PrismaClass } from '@prisma/client'; // Import Gender and Class type
+import { Gender,  } from '@prisma/client'; // Import Gender and Class type
 
 // Import Shadcn/ui components
 import { Button } from "@/components/ui/button";

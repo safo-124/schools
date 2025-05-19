@@ -1,7 +1,7 @@
 // app/(platform)/super-admin/dashboard/page.tsx
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'; // Adjust path
-import { PrismaClient, UserRole, School } from '@prisma/client';
+import { authOptions } from '@/lib/auth';// Adjust path
+import {  UserRole, School } from '@prisma/client';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 

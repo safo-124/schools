@@ -20,7 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 // Skeleton not used on this specific page as it doesn't fetch dropdown data currently
 import { toast } from "sonner";
-import { ArrowLeft, PlusCircle, CalendarIcon } from "lucide-react";
+import { ArrowLeft, CalendarIcon } from "lucide-react";
 
 // Zod schema for the form (client-side)
 const createTeacherFormSchema = z.object({
@@ -140,7 +140,7 @@ export default function AddNewTeacherPage() {
         </div>
         <CardDescription>
           Fill in the details below to add a new teacher to your school. 
-          An account will be created if the email doesn't already exist.
+          An account will be created if the email doesnt already exist.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>

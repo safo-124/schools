@@ -1,12 +1,12 @@
 // app/(platform)/school-admin/dashboard/page.tsx
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'; // Adjust path
+import { authOptions } from '@/lib/auth';// Adjust path
 import { UserRole } from '@prisma/client';
 import { redirect } from 'next/navigation';
 
 // Shadcn/ui components for layout
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { Building, Users2, BookCopy, Users } from 'lucide-react'; // Example icons
+import { Users2, BookCopy, Users } from 'lucide-react'; // Example icons
 
 // Assuming a shared Prisma instance
 import prisma from '@/lib/db'; // Adjust path to your shared Prisma instance
