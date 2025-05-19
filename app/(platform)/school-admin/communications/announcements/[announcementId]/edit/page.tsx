@@ -24,15 +24,15 @@ import { toast } from "sonner";
 import { ArrowLeft, Save, CalendarIcon } from "lucide-react";
 
 // Zod schema for the Edit Announcement form (all fields optional for PATCH)
+// This should match the updateAnnouncementApiSchema in your [announcementId]/route.ts
 const editAnnouncementFormSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters long.").optional(),
   content: z.string().min(10, "Content must be at least 10 characters long.").optional(),
-  publishDate: z.date().optional().nullable(),
-  expiryDate: z.date().optional().nullable(),
+  publishDate: z.date().optional().nullable(), // Handled as Date object in form
+  expiryDate: z.date().optional().nullable(),   // Handled as Date object in form
   audience: z.string().optional().or(z.literal('')).nullable(),
   isPublished: z.boolean().optional(),
 }).refine(data => {
-    // Ensure expiryDate is after publishDate if both are provided and publishDate is not null
     if (data.expiryDate && data.publishDate && data.expiryDate < data.publishDate) {
         return false;
     }
@@ -43,7 +43,14 @@ const editAnnouncementFormSchema = z.object({
 });
 
 type EditAnnouncementFormValues = z.infer<typeof editAnnouncementFormSchema>;
-type AnnouncementDataToEdit = PrismaSchoolAnnouncement; // API returns the full object
+
+// Type for data fetched from API (includes createdByAdmin)
+interface AnnouncementDataToEdit extends PrismaSchoolAnnouncement {
+  // createdByAdmin is included if your GET API includes it, otherwise make optional
+  createdByAdmin?: {
+    user: { firstName: string | null; lastName: string | null; };
+  } | null;
+}
 
 export default function EditAnnouncementPage() {
   const router = useRouter();
@@ -51,18 +58,23 @@ export default function EditAnnouncementPage() {
   const announcementId = params.announcementId as string;
 
   const [initialLoading, setInitialLoading] = useState(true);
-  // fetchError will be handled by toast
+  const [originalAnnouncement, setOriginalAnnouncement] = useState<AnnouncementDataToEdit | null>(null);
 
   const {
     register,
     handleSubmit,
     reset,
     control,
-    formState: { errors, isSubmitting, dirtyFields },
+    formState: { errors, isSubmitting, dirtyFields }, // Use dirtyFields
   } = useForm<EditAnnouncementFormValues>({
     resolver: zodResolver(editAnnouncementFormSchema),
     defaultValues: { // Initialize to prevent uncontrolled component warnings
-        title: '', content: '', publishDate: null, expiryDate: null, audience: '', isPublished: true,
+        title: '',
+        content: '',
+        publishDate: null,
+        expiryDate: null,
+        audience: '',
+        isPublished: true,
     },
   });
 
@@ -71,7 +83,7 @@ export default function EditAnnouncementPage() {
     if (!announcementId) {
       toast.error("Error: Announcement ID not found in URL.");
       setInitialLoading(false);
-      router.push("/school-admin/communications/announcements"); // Redirect if no ID
+      router.push("/school-admin/communications/announcements");
       return;
     }
 
@@ -84,6 +96,7 @@ export default function EditAnnouncementPage() {
           throw new Error(errorData.message || `Failed to fetch announcement data: ${response.statusText}`);
         }
         const announcementData: AnnouncementDataToEdit = await response.json();
+        setOriginalAnnouncement(announcementData); // Store original for comparison or display
         
         reset({
           title: announcementData.title || '',
@@ -109,22 +122,19 @@ export default function EditAnnouncementPage() {
     const changedData: Partial<EditAnnouncementFormValues & { publishDate?: string|null, expiryDate?: string|null }> = {};
     let hasChanges = false;
 
-    for (const key in dirtyFields) {
-        if (dirtyFields[key as keyof EditAnnouncementFormValues]) {
-            hasChanges = true;
-            const typedKey = key as keyof EditAnnouncementFormValues;
-            const value = formData[typedKey];
-
-            if (typedKey === 'publishDate' || typedKey === 'expiryDate') {
-                changedData[typedKey] = value ? (value as Date).toISOString() : null;
-            } else if (value === '') { // User cleared an optional text field
-                // For audience, empty string might mean "clear it to null" or just "it's empty"
-                (changedData as any)[typedKey] = null; 
-            } else {
-                (changedData as any)[typedKey] = value;
-            }
+    // Iterate over dirtyFields to build the payload with only changed values
+    (Object.keys(dirtyFields) as Array<keyof EditAnnouncementFormValues>).forEach(key => {
+        hasChanges = true;
+        const value = formData[key];
+        if (key === 'publishDate' || key === 'expiryDate') {
+            changedData[key] = value ? (value as Date).toISOString() : null;
+        } else if (value === '') { // For optional text fields that can be cleared
+            (changedData as any)[key] = null; 
+        } else {
+            (changedData as any)[key] = value;
         }
-    }
+    });
+    
 
     if (!hasChanges) {
         toast.info("No changes were made to submit.", { id: submittingToastId });
@@ -151,7 +161,15 @@ export default function EditAnnouncementPage() {
         throw new Error(errorMessage);
       }
       toast.success("Announcement updated successfully!", { id: submittingToastId });
-      reset(formData); // Reset form with the new data to clear dirtyFields
+      // Update form with newly saved data to clear dirty state and reflect changes
+      reset({ 
+        title: result.title || '',
+        content: result.content || '',
+        publishDate: result.publishDate ? new Date(result.publishDate) : null,
+        expiryDate: result.expiryDate ? new Date(result.expiryDate) : null,
+        audience: result.audience || '',
+        isPublished: result.isPublished,
+      }); 
       setTimeout(() => {
         router.push('/school-admin/communications/announcements'); 
       }, 1500);
@@ -174,14 +192,34 @@ export default function EditAnnouncementPage() {
           <CardDescription><Skeleton className="h-4 w-3/4" /></CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 pt-6">
-          <Skeleton className="h-8 w-full" /> <Skeleton className="h-20 w-full" />
-          <div className="grid grid-cols-2 gap-4"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /></div>
-          <Skeleton className="h-8 w-full" /> <Skeleton className="h-6 w-1/4" />
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-20 w-full" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2"><Skeleton className="h-4 w-1/3" /><Skeleton className="h-10 w-full" /></div>
+            <div className="space-y-2"><Skeleton className="h-4 w-1/3" /><Skeleton className="h-10 w-full" /></div>
+          </div>
+          <div className="space-y-2"><Skeleton className="h-4 w-1/4" /><Skeleton className="h-10 w-full" /></div>
+          <div className="flex items-center space-x-2 pt-2"><Skeleton className="h-6 w-6 rounded-full" /><Skeleton className="h-4 w-1/4" /></div>
         </CardContent>
         <CardFooter><Skeleton className="h-10 w-28" /></CardFooter>
       </Card>
     );
   }
+  
+  if (!originalAnnouncement && !initialLoading) { // Fetch attempted but failed to get data
+     return (
+      <Card className="w-full max-w-lg mx-auto">
+        <CardHeader><CardTitle>Error</CardTitle></CardHeader>
+        <CardContent>
+            <p className="text-destructive">Failed to load announcement data. It might have been deleted or an error occurred.</p>
+            <Button variant="outline" asChild className="mt-4">
+                <Link href="/school-admin/communications/announcements"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Announcements</Link>
+            </Button>
+        </CardContent>
+      </Card>
+     );
+  }
+
 
   return (
     <Card className="w-full max-w-lg mx-auto">
@@ -196,7 +234,7 @@ export default function EditAnnouncementPage() {
           </Button>
         </div>
         <CardDescription>
-          Modify the details of this announcement.
+          Modify the details of: <strong>{originalAnnouncement?.title || "this announcement"}</strong>.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -220,7 +258,7 @@ export default function EditAnnouncementPage() {
                     <Button variant={"outline"} id="edit-ann-publishDate" className={`w-full justify-start text-left font-normal ${!field.value && "text-muted-foreground"}`} disabled={isSubmitting}>
                     <CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, "PPP") : <span>Pick publish date</span>}
                     </Button></PopoverTrigger><PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus disabled={isSubmitting}/>
+                    <Calendar mode="single" selected={field.value} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={isSubmitting}/>
                 </PopoverContent></Popover>)} 
               />
               {errors.publishDate && <p className="text-sm text-destructive mt-1">{errors.publishDate.message}</p>}
@@ -232,7 +270,7 @@ export default function EditAnnouncementPage() {
                     <Button variant={"outline"} id="edit-ann-expiryDate" className={`w-full justify-start text-left font-normal ${!field.value && "text-muted-foreground"}`} disabled={isSubmitting}>
                     <CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, "PPP") : <span>No expiry</span>}
                     </Button></PopoverTrigger><PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus disabled={isSubmitting}/>
+                    <Calendar mode="single" selected={field.value} onSelect={(date) => field.onChange(date || null)} initialFocus disabled={isSubmitting}/>
                 </PopoverContent></Popover>)}
               />
               {errors.expiryDate && <p className="text-sm text-destructive mt-1">{errors.expiryDate.message}</p>}
@@ -250,6 +288,7 @@ export default function EditAnnouncementPage() {
             <Label htmlFor="edit-ann-isPublished" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
               Is Published
             </Label>
+             {errors.isPublished && <p className="text-sm text-destructive mt-1">{errors.isPublished.message}</p>}
           </div>
         </CardContent>
         <CardFooter>
