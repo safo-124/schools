@@ -1,5 +1,5 @@
 // app/(platform)/super-admin/schools/[schoolId]/page.tsx
-import { School, UserRole, SchoolAdmin, User as PrismaUser } from '@prisma/client'; // Assuming Prisma types are correctly imported
+import { School, UserRole, SchoolAdmin, User as PrismaUser } from '@prisma/client';
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 
@@ -8,20 +8,27 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Edit3, Users as UsersIcon } from 'lucide-react'; // Renamed UserPlus to UsersIcon for admin list
+import { ArrowLeft, Edit3, Users as UsersIcon } from 'lucide-react';
 
 // For session checking on server components
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'; // Adjust path if needed
 
 // Import custom components
-import { SchoolStatusToggleButton } from '@/components/super-admin/SchoolStatusToggleButton'; // Adjust path
-import { EditSchoolButton } from '@/components/super-admin/EditSchoolButton'; // Adjust path
-import { AssignSchoolAdminForm } from '@/components/super-admin/AssignSchoolAdminForm'; // Adjust path
+import { SchoolStatusToggleButton } from '@/components/super-admin/SchoolStatusToggleButton';
+import { EditSchoolButton } from '@/components/super-admin/EditSchoolButton';
+import { AssignSchoolAdminForm } from '@/components/super-admin/AssignSchoolAdminForm';
 
-import prisma from '@/lib/db'; // Using shared Prisma instance
+import prisma from '@/lib/db';
 
-// Define a type for the admin data we'll fetch (SchoolAdmin linked with User details)
+// Define a type for the props the page component will receive
+// Next.js PageProps for dynamic routes might expect params to be potentially promise-like
+// or a structure that can be awaited.
+interface SchoolDetailsPageProps {
+  params: { schoolId: string }; // Keep this simple for what we directly use
+  // searchParams?: { [key: string]: string | string[] | undefined }; // If you were using searchParams
+}
+
 type AdminWithUserDetails = SchoolAdmin & {
   user: Pick<PrismaUser, 'id' | 'email' | 'firstName' | 'lastName' | 'isActive'>;
 };
@@ -32,14 +39,14 @@ interface FetchedSchoolDetailsData {
 }
 
 async function getSchoolAndAdminDetails(schoolId: string): Promise<FetchedSchoolDetailsData | null> {
-  console.log(`[PAGE_SCHOOL_DETAILS] Fetching details for schoolId: ${schoolId}`);
+  // console.log(`[PAGE_SCHOOL_DETAILS] Fetching details for schoolId: ${schoolId}`);
   try {
     const school = await prisma.school.findUnique({
       where: { id: schoolId },
     });
 
     if (!school) {
-      console.log(`[PAGE_SCHOOL_DETAILS] School not found for schoolId: ${schoolId}`);
+      // console.log(`[PAGE_SCHOOL_DETAILS] School not found for schoolId: ${schoolId}`);
       return null;
     }
 
@@ -50,10 +57,9 @@ async function getSchoolAndAdminDetails(schoolId: string): Promise<FetchedSchool
           select: { id: true, email: true, firstName: true, lastName: true, isActive: true },
         },
       },
-      orderBy: { user: { firstName: 'asc' } }, // Order by admin's first name
+      orderBy: { user: { firstName: 'asc' } },
     });
-    console.log(`[PAGE_SCHOOL_DETAILS] Found ${admins.length} admins for schoolId: ${schoolId}`);
-
+    // console.log(`[PAGE_SCHOOL_DETAILS] Found ${admins.length} admins for schoolId: ${schoolId}`);
     return { school, admins };
   } catch (error) {
     console.error(`[PAGE_SCHOOL_DETAILS] Failed to fetch school and admin details for schoolId ${schoolId}:`, error);
@@ -61,24 +67,25 @@ async function getSchoolAndAdminDetails(schoolId: string): Promise<FetchedSchool
   }
 }
 
-// Type params directly in the function signature for Next.js App Router pages
-export default async function SchoolDetailsPage({ 
-  params 
-}: { 
-  params: { schoolId: string } 
-}) {
-  console.log(`[PAGE_SCHOOL_DETAILS] Rendering page for schoolId: ${params.schoolId}`);
+// Use the defined props type and ensure params is handled correctly.
+// Next.js passes params as an object.
+export default async function SchoolDetailsPage({ params }: SchoolDetailsPageProps) {
+  // Although Next.js passes params directly, the internal PageProps constraint might be causing issues.
+  // For safety, we access params.schoolId directly.
+  const schoolId = params.schoolId; 
+  
+  // console.log(`[PAGE_SCHOOL_DETAILS] Rendering page for schoolId: ${schoolId}`);
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id || session.user.role !== UserRole.SUPER_ADMIN) {
-    console.log(`[PAGE_SCHOOL_DETAILS] Unauthorized access attempt or invalid session for schoolId: ${params.schoolId}. Redirecting to login.`);
-    redirect('/auth/login?callbackUrl=' + encodeURIComponent(`/super-admin/schools/${params.schoolId}`));
+    // console.log(`[PAGE_SCHOOL_DETAILS] Unauthorized access for schoolId: ${schoolId}. Redirecting.`);
+    redirect('/auth/login?callbackUrl=' + encodeURIComponent(`/super-admin/schools/${schoolId}`));
   }
 
-  const schoolData = await getSchoolAndAdminDetails(params.schoolId);
+  const schoolData = await getSchoolAndAdminDetails(schoolId);
 
   if (!schoolData) {
-    console.log(`[PAGE_SCHOOL_DETAILS] No school data found for schoolId: ${params.schoolId}. Triggering notFound().`);
+    // console.log(`[PAGE_SCHOOL_DETAILS] No school data found for schoolId: ${schoolId}. Triggering notFound().`);
     notFound();
   }
 
@@ -161,11 +168,9 @@ export default async function SchoolDetailsPage({
           <div>
             <div className="flex justify-between items-center mb-2">
                 <h3 className="text-lg font-semibold flex items-center"><UsersIcon className="mr-2 h-5 w-5 text-muted-foreground"/>School Administrators</h3>
-                {/* AssignSchoolAdminForm will render its own trigger button */}
                  <AssignSchoolAdminForm 
                     schoolId={school.id} 
                     schoolName={school.name} 
-                    // onAdminAssigned is handled by router.refresh() inside the AssignSchoolAdminForm component
                  />
             </div>
             <Separator />
@@ -183,20 +188,16 @@ export default async function SchoolDetailsPage({
                         <Badge variant={adminLink.user.isActive ? 'default' : 'outline'} className={adminLink.user.isActive ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'border-orange-400 text-orange-600 dark:border-orange-600 dark:text-orange-400'}>
                             User Acc: {adminLink.user.isActive ? 'Active' : 'Inactive'}
                         </Badge>
-                        {/* TODO: Placeholder for "Remove Admin" button for this school */}
-                        {/* <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title="Remove Admin Role (soon)" disabled><Trash2 className="h-4 w-4" /></Button> */}
                     </div>
                   </li>
                 ))}
               </ul>
             )}
           </div>
-
         </CardContent>
         <CardFooter className="flex flex-wrap items-center gap-2 border-t pt-6 mt-4 dark:border-neutral-700">
           <h3 className="text-md font-semibold mr-2 self-center">School Actions:</h3>
           <SchoolStatusToggleButton school={{ id: school.id, isActive: school.isActive, name: school.name }} />
-          {/* The AssignSchoolAdminForm is now triggered from the "School Administrators" section header */}
         </CardFooter>
       </Card>
     </div>
