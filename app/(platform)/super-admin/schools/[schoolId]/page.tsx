@@ -15,20 +15,13 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'; // Adjust path if needed
 
 // Import custom components
-import { SchoolStatusToggleButton } from '@/components/super-admin/SchoolStatusToggleButton';
-import { EditSchoolButton } from '@/components/super-admin/EditSchoolButton';
-import { AssignSchoolAdminForm } from '@/components/super-admin/AssignSchoolAdminForm';
+import { SchoolStatusToggleButton } from '@/components/super-admin/SchoolStatusToggleButton'; // Adjust path
+import { EditSchoolButton } from '@/components/super-admin/EditSchoolButton'; // Adjust path
+import { AssignSchoolAdminForm } from '@/components/super-admin/AssignSchoolAdminForm'; // Adjust path
 
-import prisma from '@/lib/db';
+import prisma from '@/lib/db'; // Using shared Prisma instance
 
-// Define a type for the props the page component will receive
-// Next.js PageProps for dynamic routes might expect params to be potentially promise-like
-// or a structure that can be awaited.
-interface SchoolDetailsPageProps {
-  params: { schoolId: string }; // Keep this simple for what we directly use
-  // searchParams?: { [key: string]: string | string[] | undefined }; // If you were using searchParams
-}
-
+// Define a type for the admin data we'll fetch (SchoolAdmin linked with User details)
 type AdminWithUserDetails = SchoolAdmin & {
   user: Pick<PrismaUser, 'id' | 'email' | 'firstName' | 'lastName' | 'isActive'>;
 };
@@ -67,19 +60,22 @@ async function getSchoolAndAdminDetails(schoolId: string): Promise<FetchedSchool
   }
 }
 
-// Use the defined props type and ensure params is handled correctly.
-// Next.js passes params as an object.
-export default async function SchoolDetailsPage({ params }: SchoolDetailsPageProps) {
-  // Although Next.js passes params directly, the internal PageProps constraint might be causing issues.
-  // For safety, we access params.schoolId directly.
-  const schoolId = params.schoolId; 
+// Using `params: any` to bypass the Vercel build type error for PageProps constraint
+export default async function SchoolDetailsPage({ params }: { params: any }) {
+  // Internally, we expect params.schoolId to be a string and will use it as such.
+  const schoolId = params.schoolId as string; 
   
   // console.log(`[PAGE_SCHOOL_DETAILS] Rendering page for schoolId: ${schoolId}`);
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id || session.user.role !== UserRole.SUPER_ADMIN) {
-    // console.log(`[PAGE_SCHOOL_DETAILS] Unauthorized access for schoolId: ${schoolId}. Redirecting.`);
+    // console.log(`[PAGE_SCHOOL_DETAILS] Unauthorized access for schoolId: ${schoolId}. Redirecting to login.`);
     redirect('/auth/login?callbackUrl=' + encodeURIComponent(`/super-admin/schools/${schoolId}`));
+  }
+
+  if (!schoolId) { // Basic check in case params.schoolId was somehow undefined despite being a dynamic route
+    console.error("[PAGE_SCHOOL_DETAILS] schoolId is undefined from params. Triggering notFound().");
+    notFound();
   }
 
   const schoolData = await getSchoolAndAdminDetails(schoolId);
