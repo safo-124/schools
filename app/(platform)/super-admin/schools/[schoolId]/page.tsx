@@ -1,5 +1,5 @@
 // app/(platform)/super-admin/schools/[schoolId]/page.tsx
-import { PrismaClient, School, UserRole, SchoolAdmin, User as PrismaUser } from '@prisma/client'; // Added SchoolAdmin, PrismaUser
+import { School, UserRole, SchoolAdmin, User as PrismaUser } from '@prisma/client'; // Assuming Prisma types are correctly imported
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Edit3, } from 'lucide-react'; // Added Users icon
+import { ArrowLeft, Edit3, Users as UsersIcon } from 'lucide-react'; // Renamed UserPlus to UsersIcon for admin list
 
 // For session checking on server components
 import { getServerSession } from 'next-auth/next';
@@ -19,31 +19,27 @@ import { SchoolStatusToggleButton } from '@/components/super-admin/SchoolStatusT
 import { EditSchoolButton } from '@/components/super-admin/EditSchoolButton'; // Adjust path
 import { AssignSchoolAdminForm } from '@/components/super-admin/AssignSchoolAdminForm'; // Adjust path
 
-const prisma = new PrismaClient();
+import prisma from '@/lib/db'; // Using shared Prisma instance
 
-interface SchoolDetailsPageProps {
-  params: {
-    schoolId: string;
-  };
-}
-
-// Define a type for the admin data we'll fetch
-type AdminWithUser = SchoolAdmin & {
+// Define a type for the admin data we'll fetch (SchoolAdmin linked with User details)
+type AdminWithUserDetails = SchoolAdmin & {
   user: Pick<PrismaUser, 'id' | 'email' | 'firstName' | 'lastName' | 'isActive'>;
 };
 
-interface SchoolDetailsData {
+interface FetchedSchoolDetailsData {
   school: School;
-  admins: AdminWithUser[];
+  admins: AdminWithUserDetails[];
 }
 
-async function getSchoolAndAdminDetails(schoolId: string): Promise<SchoolDetailsData | null> {
+async function getSchoolAndAdminDetails(schoolId: string): Promise<FetchedSchoolDetailsData | null> {
+  console.log(`[PAGE_SCHOOL_DETAILS] Fetching details for schoolId: ${schoolId}`);
   try {
     const school = await prisma.school.findUnique({
       where: { id: schoolId },
     });
 
     if (!school) {
+      console.log(`[PAGE_SCHOOL_DETAILS] School not found for schoolId: ${schoolId}`);
       return null;
     }
 
@@ -54,25 +50,35 @@ async function getSchoolAndAdminDetails(schoolId: string): Promise<SchoolDetails
           select: { id: true, email: true, firstName: true, lastName: true, isActive: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { user: { firstName: 'asc' } }, // Order by admin's first name
     });
+    console.log(`[PAGE_SCHOOL_DETAILS] Found ${admins.length} admins for schoolId: ${schoolId}`);
 
     return { school, admins };
   } catch (error) {
-    console.error("Failed to fetch school and admin details:", error);
+    console.error(`[PAGE_SCHOOL_DETAILS] Failed to fetch school and admin details for schoolId ${schoolId}:`, error);
     return null;
   }
 }
 
-export default async function SchoolDetailsPage({ params }: SchoolDetailsPageProps) {
+// Type params directly in the function signature for Next.js App Router pages
+export default async function SchoolDetailsPage({ 
+  params 
+}: { 
+  params: { schoolId: string } 
+}) {
+  console.log(`[PAGE_SCHOOL_DETAILS] Rendering page for schoolId: ${params.schoolId}`);
   const session = await getServerSession(authOptions);
+
   if (!session?.user?.id || session.user.role !== UserRole.SUPER_ADMIN) {
+    console.log(`[PAGE_SCHOOL_DETAILS] Unauthorized access attempt or invalid session for schoolId: ${params.schoolId}. Redirecting to login.`);
     redirect('/auth/login?callbackUrl=' + encodeURIComponent(`/super-admin/schools/${params.schoolId}`));
   }
 
   const schoolData = await getSchoolAndAdminDetails(params.schoolId);
 
   if (!schoolData) {
+    console.log(`[PAGE_SCHOOL_DETAILS] No school data found for schoolId: ${params.schoolId}. Triggering notFound().`);
     notFound();
   }
 
@@ -88,7 +94,7 @@ export default async function SchoolDetailsPage({ params }: SchoolDetailsPagePro
           </Link>
         </Button>
         <EditSchoolButton schoolId={school.id} variant="default" size="default">
-          <Edit3 className="mr-2 h-4 w-4" /> Edit School
+          <Edit3 className="mr-2 h-4 w-4" /> Edit School Profile
         </EditSchoolButton>
       </div>
 
@@ -151,11 +157,16 @@ export default async function SchoolDetailsPage({ params }: SchoolDetailsPagePro
             </div>
           </div>
 
-          {/* School Administrators Section - NEW */}
+          {/* School Administrators Section */}
           <div>
             <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg font-semibold">School Administrators</h3>
-                {/* The AssignSchoolAdminForm component itself contains the trigger button */}
+                <h3 className="text-lg font-semibold flex items-center"><UsersIcon className="mr-2 h-5 w-5 text-muted-foreground"/>School Administrators</h3>
+                {/* AssignSchoolAdminForm will render its own trigger button */}
+                 <AssignSchoolAdminForm 
+                    schoolId={school.id} 
+                    schoolName={school.name} 
+                    // onAdminAssigned is handled by router.refresh() inside the AssignSchoolAdminForm component
+                 />
             </div>
             <Separator />
             {admins.length === 0 ? (
@@ -163,17 +174,17 @@ export default async function SchoolDetailsPage({ params }: SchoolDetailsPagePro
             ) : (
               <ul className="list-none mt-3 space-y-2 text-sm">
                 {admins.map(adminLink => (
-                  <li key={adminLink.id} className="p-2 border rounded-md flex justify-between items-center">
+                  <li key={adminLink.id} className="p-3 border rounded-md flex justify-between items-center dark:border-neutral-700">
                     <div>
                       <span className="font-medium">{adminLink.user.firstName} {adminLink.user.lastName}</span>
                       <span className="text-muted-foreground ml-2">({adminLink.user.email})</span>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Badge variant={adminLink.user.isActive ? 'default' : 'outline'} className={adminLink.user.isActive ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'border-orange-400 text-orange-600'}>
-                            User: {adminLink.user.isActive ? 'Active' : 'Inactive'}
+                        <Badge variant={adminLink.user.isActive ? 'default' : 'outline'} className={adminLink.user.isActive ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'border-orange-400 text-orange-600 dark:border-orange-600 dark:text-orange-400'}>
+                            User Acc: {adminLink.user.isActive ? 'Active' : 'Inactive'}
                         </Badge>
-                        {/* Placeholder for future actions like "Remove Admin" */}
-                        {/* <Button variant="ghost" size="icon" className="h-6 w-6" disabled><Trash2 className="h-4 w-4" /></Button> */}
+                        {/* TODO: Placeholder for "Remove Admin" button for this school */}
+                        {/* <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title="Remove Admin Role (soon)" disabled><Trash2 className="h-4 w-4" /></Button> */}
                     </div>
                   </li>
                 ))}
@@ -182,16 +193,10 @@ export default async function SchoolDetailsPage({ params }: SchoolDetailsPagePro
           </div>
 
         </CardContent>
-        <CardFooter className="flex flex-wrap items-center gap-2 border-t pt-6 mt-4">
-          <h3 className="text-md font-semibold mr-2 self-center">Actions:</h3>
-          <EditSchoolButton schoolId={school.id} /> 
+        <CardFooter className="flex flex-wrap items-center gap-2 border-t pt-6 mt-4 dark:border-neutral-700">
+          <h3 className="text-md font-semibold mr-2 self-center">School Actions:</h3>
           <SchoolStatusToggleButton school={{ id: school.id, isActive: school.isActive, name: school.name }} />
-          {/* AssignSchoolAdminForm now handles its own trigger button */}
-          <AssignSchoolAdminForm 
-            schoolId={school.id} 
-            schoolName={school.name} 
-            // onAdminAssigned is handled by router.refresh() inside the component
-          />
+          {/* The AssignSchoolAdminForm is now triggered from the "School Administrators" section header */}
         </CardFooter>
       </Card>
     </div>
