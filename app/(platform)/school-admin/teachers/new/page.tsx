@@ -15,11 +15,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+// Alert component is not used directly if relying on toasts for feedback
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { ArrowLeft, CheckCircle, XCircle, CalendarIcon } from "lucide-react";
-// import { toast } from "sonner"; // Optional
+// Skeleton not used on this specific page as it doesn't fetch dropdown data currently
+import { toast } from "sonner";
+import { ArrowLeft, PlusCircle, CalendarIcon } from "lucide-react";
 
 // Zod schema for the form (client-side)
 const createTeacherFormSchema = z.object({
@@ -28,12 +29,12 @@ const createTeacherFormSchema = z.object({
   lastName: z.string().min(1, "Last name is required."),
   password: z.string().min(6, "Password must be at least 6 characters long."),
   confirmPassword: z.string().min(6, "Please confirm your password."),
-  phoneNumber: z.string().optional().or(z.literal('')), // Allow empty string
-  teacherIdNumber: z.string().optional().or(z.literal('')), // Allow empty string
-  dateOfJoining: z.date().optional().nullable(), // Use z.date() for DatePicker, allow null
-  qualifications: z.string().optional().or(z.literal('')), // Allow empty string
-  specialization: z.string().optional().or(z.literal('')), // Allow empty string
-  profilePicture: z.string().url("Profile picture must be a valid URL if provided, or leave empty.").optional().or(z.literal('')), // Allow empty string
+  phoneNumber: z.string().optional().or(z.literal('')), 
+  teacherIdNumber: z.string().optional().or(z.literal('')), 
+  dateOfJoining: z.date().optional().nullable(), 
+  qualifications: z.string().optional().or(z.literal('')), 
+  specialization: z.string().optional().or(z.literal('')), 
+  profilePicture: z.string().url("Profile picture must be a valid URL if provided, or leave empty.").optional().or(z.literal('')),
 })
 .refine((data) => data.password === data.confirmPassword, {
   message: "Passwords do not match.",
@@ -44,14 +45,13 @@ type CreateTeacherFormValues = z.infer<typeof createTeacherFormSchema>;
 
 export default function AddNewTeacherPage() {
   const router = useRouter();
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+  // submitError and submitSuccess state are handled by toasts
 
   const {
     register,
     handleSubmit,
     reset,
-    control, 
+    control,
     formState: { errors, isSubmitting },
   } = useForm<CreateTeacherFormValues>({
     resolver: zodResolver(createTeacherFormSchema),
@@ -63,7 +63,7 @@ export default function AddNewTeacherPage() {
         confirmPassword: '',
         phoneNumber: '',
         teacherIdNumber: '',
-        dateOfJoining: null,
+        dateOfJoining: null, // Default to null for optional date
         qualifications: '',
         specialization: '',
         profilePicture: '',
@@ -71,25 +71,22 @@ export default function AddNewTeacherPage() {
   });
 
   const onSubmit: SubmitHandler<CreateTeacherFormValues> = async (formData) => {
-    setSubmitError(null);
-    setSubmitSuccess(null);
-
+    const submittingToastId = toast.loading("Adding new teacher...");
+    
     const { confirmPassword, dateOfJoining, ...restOfData } = formData;
     const apiData = {
         ...restOfData,
-        // Send date as ISO string or undefined. API schema expects string or null/undefined.
-        dateOfJoining: dateOfJoining ? dateOfJoining.toISOString() : undefined, 
-        // Ensure empty optional strings are sent as undefined or null if API schema expects that instead of ""
-        // For Zod `.or(z.literal('')).nullable()` on API, sending "" is fine.
-        // If API used just `.optional().nullable()`, convert "" to undefined/null
-        phoneNumber: restOfData.phoneNumber === '' ? undefined : restOfData.phoneNumber,
-        teacherIdNumber: restOfData.teacherIdNumber === '' ? undefined : restOfData.teacherIdNumber,
-        qualifications: restOfData.qualifications === '' ? undefined : restOfData.qualifications,
-        specialization: restOfData.specialization === '' ? undefined : restOfData.specialization,
-        profilePicture: restOfData.profilePicture === '' ? undefined : restOfData.profilePicture,
+        dateOfJoining: dateOfJoining ? dateOfJoining.toISOString() : undefined,
+        // Ensure empty optional strings are handled as per API expectation (e.g., convert to null if API doesn't like "")
+        // The API schema for teachers used .or(z.literal('')).nullable() for these, so "" or null should be fine.
+        // For robustness, if API expects null for empty fields, convert them:
+        phoneNumber: restOfData.phoneNumber === '' ? null : restOfData.phoneNumber,
+        teacherIdNumber: restOfData.teacherIdNumber === '' ? null : restOfData.teacherIdNumber,
+        qualifications: restOfData.qualifications === '' ? null : restOfData.qualifications,
+        specialization: restOfData.specialization === '' ? null : restOfData.specialization,
+        profilePicture: restOfData.profilePicture === '' ? null : restOfData.profilePicture,
     };
-
-    // console.log("Submitting to API:", JSON.stringify(apiData, null, 2));
+    console.log("[ADD_TEACHER_PAGE] Submitting to API:", JSON.stringify(apiData, null, 2));
 
     try {
       const response = await fetch('/api/school-admin/teachers', {
@@ -98,30 +95,34 @@ export default function AddNewTeacherPage() {
         body: JSON.stringify(apiData),
       });
 
-      const result = await response.json();
-
       if (!response.ok) {
-        // console.error("API Error Response:", result);
-        let errorMessage = result.message || `Error: ${response.status}`;
-        if (result.errors) {
-          const fieldErrors = Object.entries(result.errors as Record<string, string[]>)
-            .map(([field, messages]) => `${field}: ${messages.join(', ')}`)
-            .join('; ');
-          errorMessage = fieldErrors ? `Invalid fields: ${fieldErrors}` : errorMessage;
+        const responseText = await response.text(); // Get response text for non-OK responses
+        console.error(`[ADD_TEACHER_PAGE] API Error: Status ${response.status}. Response text:`, responseText);
+        let errorMessage = `Failed to create teacher. Status: ${response.status}.`;
+        try {
+            // Try to parse if it might be JSON error from our API
+            const errorResult = JSON.parse(responseText); 
+            errorMessage = errorResult.message || (errorResult.errors ? JSON.stringify(errorResult.errors) : errorMessage);
+        } catch (e) {
+            // Response was not JSON (e.g., HTML error page from server crash)
+            const previewText = responseText.length > 150 ? responseText.substring(0, 150) + "..." : responseText;
+            errorMessage = `${errorMessage} Server response: ${previewText}`;
         }
-        setSubmitError(errorMessage);
-      } else {
-        setSubmitSuccess(`Teacher "${result.user.firstName} ${result.user.lastName}" created successfully!`);
-        // toast.success(`Teacher "${result.user.firstName} ${result.user.lastName}" created successfully!`);
-        reset(); 
-        setTimeout(() => {
-          router.push('/school-admin/teachers');
-        }, 2000);
+        throw new Error(errorMessage);
       }
-    } catch (err) {
-      console.error("Create teacher error (client):", err);
-      setSubmitError('An unexpected error occurred. Please try again.');
-      // toast.error('An unexpected error occurred.');
+
+      // Only attempt to parse JSON if response.ok is true and content is expected
+      const result = await response.json(); 
+      
+      toast.success(`Teacher "${result.user.firstName} ${result.user.lastName}" created successfully!`, { id: submittingToastId });
+      reset(); 
+      setTimeout(() => {
+        router.push('/school-admin/teachers'); 
+      }, 1500);
+
+    } catch (error: any) {
+      toast.error("Failed to create teacher", { id: submittingToastId, description: error.message });
+      console.error("[ADD_TEACHER_PAGE] Create teacher submission/catch error:", error);
     }
   };
 
@@ -139,73 +140,60 @@ export default function AddNewTeacherPage() {
         </div>
         <CardDescription>
           Fill in the details below to add a new teacher to your school. 
-          An account will be created if the email doesnt already exist.
+          An account will be created if the email doesn't already exist.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
-          {submitError && (
-            <Alert variant="destructive">
-              <XCircle className="h-4 w-4" />
-              <AlertTitle>Creation Failed</AlertTitle>
-              <AlertDescription>{submitError}</AlertDescription>
-            </Alert>
-          )}
-          {submitSuccess && (
-            <Alert variant="default" className="bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-700">
-              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-              <AlertTitle>Success!</AlertTitle>
-              <AlertDescription>{submitSuccess}</AlertDescription>
-            </Alert>
-          )}
+        <CardContent className="space-y-4 pt-6">
+          {/* Toasts handle submit success/error messages */}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="firstName-teacher">First Name</Label>
-              <Input id="firstName-teacher" {...register('firstName')} disabled={isSubmitting} />
+              <Label htmlFor="firstName-teacher-add">First Name <span className="text-destructive">*</span></Label>
+              <Input id="firstName-teacher-add" {...register('firstName')} disabled={isSubmitting} />
               {errors.firstName && <p className="text-sm text-destructive mt-1">{errors.firstName.message}</p>}
             </div>
             <div>
-              <Label htmlFor="lastName-teacher">Last Name</Label>
-              <Input id="lastName-teacher" {...register('lastName')} disabled={isSubmitting} />
+              <Label htmlFor="lastName-teacher-add">Last Name <span className="text-destructive">*</span></Label>
+              <Input id="lastName-teacher-add" {...register('lastName')} disabled={isSubmitting} />
               {errors.lastName && <p className="text-sm text-destructive mt-1">{errors.lastName.message}</p>}
             </div>
           </div>
 
           <div>
-            <Label htmlFor="email-teacher">Email Address</Label>
-            <Input id="email-teacher" type="email" {...register('email')} disabled={isSubmitting} />
+            <Label htmlFor="email-teacher-add">Email Address <span className="text-destructive">*</span></Label>
+            <Input id="email-teacher-add" type="email" {...register('email')} disabled={isSubmitting} />
             {errors.email && <p className="text-sm text-destructive mt-1">{errors.email.message}</p>}
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="password-teacher">Password</Label>
-              <Input id="password-teacher" type="password" {...register('password')} disabled={isSubmitting} />
+              <Label htmlFor="password-teacher-add">Password <span className="text-destructive">*</span></Label>
+              <Input id="password-teacher-add" type="password" {...register('password')} disabled={isSubmitting} />
               {errors.password && <p className="text-sm text-destructive mt-1">{errors.password.message}</p>}
             </div>
             <div>
-              <Label htmlFor="confirmPassword-teacher">Confirm Password</Label>
-              <Input id="confirmPassword-teacher" type="password" {...register('confirmPassword')} disabled={isSubmitting} />
+              <Label htmlFor="confirmPassword-teacher-add">Confirm Password <span className="text-destructive">*</span></Label>
+              <Input id="confirmPassword-teacher-add" type="password" {...register('confirmPassword')} disabled={isSubmitting} />
               {errors.confirmPassword && <p className="text-sm text-destructive mt-1">{errors.confirmPassword.message}</p>}
             </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="phoneNumber-teacher">Phone Number (Optional)</Label>
-              <Input id="phoneNumber-teacher" {...register('phoneNumber')} disabled={isSubmitting} />
+              <Label htmlFor="phoneNumber-teacher-add">Phone Number (Optional)</Label>
+              <Input id="phoneNumber-teacher-add" {...register('phoneNumber')} disabled={isSubmitting} />
               {errors.phoneNumber && <p className="text-sm text-destructive mt-1">{errors.phoneNumber.message}</p>}
             </div>
             <div>
-              <Label htmlFor="teacherIdNumber-teacher">Teacher ID Number (Optional)</Label>
-              <Input id="teacherIdNumber-teacher" {...register('teacherIdNumber')} disabled={isSubmitting} />
+              <Label htmlFor="teacherIdNumber-teacher-add">Teacher ID Number (Optional)</Label>
+              <Input id="teacherIdNumber-teacher-add" {...register('teacherIdNumber')} disabled={isSubmitting} />
               {errors.teacherIdNumber && <p className="text-sm text-destructive mt-1">{errors.teacherIdNumber.message}</p>}
             </div>
           </div>
 
           <div>
-            <Label htmlFor="dateOfJoining-teacher">Date of Joining (Optional)</Label>
+            <Label htmlFor="dateOfJoining-teacher-add">Date of Joining (Optional)</Label>
             <Controller
               name="dateOfJoining"
               control={control}
@@ -214,6 +202,7 @@ export default function AddNewTeacherPage() {
                   <PopoverTrigger asChild>
                     <Button
                       variant={"outline"}
+                      id="dateOfJoining-teacher-add"
                       className={`w-full justify-start text-left font-normal ${!field.value && "text-muted-foreground"}`}
                       disabled={isSubmitting}
                     >
@@ -237,20 +226,20 @@ export default function AddNewTeacherPage() {
           </div>
 
           <div>
-            <Label htmlFor="qualifications-teacher">Qualifications (Optional)</Label>
-            <Textarea id="qualifications-teacher" {...register('qualifications')} disabled={isSubmitting} />
+            <Label htmlFor="qualifications-teacher-add">Qualifications (Optional)</Label>
+            <Textarea id="qualifications-teacher-add" {...register('qualifications')} disabled={isSubmitting} />
             {errors.qualifications && <p className="text-sm text-destructive mt-1">{errors.qualifications.message}</p>}
           </div>
 
           <div>
-            <Label htmlFor="specialization-teacher">Specialization (e.g., Mathematics, English) (Optional)</Label>
-            <Input id="specialization-teacher" {...register('specialization')} disabled={isSubmitting} />
+            <Label htmlFor="specialization-teacher-add">Specialization (e.g., Mathematics, English) (Optional)</Label>
+            <Input id="specialization-teacher-add" {...register('specialization')} disabled={isSubmitting} />
             {errors.specialization && <p className="text-sm text-destructive mt-1">{errors.specialization.message}</p>}
           </div>
 
            <div>
-            <Label htmlFor="profilePicture-teacher">Profile Picture URL (Optional)</Label>
-            <Input id="profilePicture-teacher" type="url" {...register('profilePicture')} disabled={isSubmitting} placeholder="https://example.com/image.png"/>
+            <Label htmlFor="profilePicture-teacher-add">Profile Picture URL (Optional)</Label>
+            <Input id="profilePicture-teacher-add" type="url" {...register('profilePicture')} disabled={isSubmitting} placeholder="https://example.com/image.png"/>
             {errors.profilePicture && <p className="text-sm text-destructive mt-1">{errors.profilePicture.message}</p>}
           </div>
 

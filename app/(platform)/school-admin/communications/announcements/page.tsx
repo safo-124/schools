@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import Link from 'next/link'; // **** IMPORT Link ****
 import { z } from 'zod';
 import { useForm, SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -34,7 +34,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { PlusCircle, Megaphone, CalendarIcon, Edit, Trash2 } from "lucide-react";
+import { PlusCircle, Megaphone, CalendarIcon, Edit, Trash2, ArrowLeft } from "lucide-react"; // Added ArrowLeft
 import { Badge } from '@/components/ui/badge';
 
 import { DeleteAnnouncementButton } from '@/components/school-admin/communications/DeleteAnnouncementButton';
@@ -81,11 +81,8 @@ export default function ManageAnnouncementsPage() {
 
   const fetchAnnouncements = useCallback(async (isInitialCall = false) => {
     if (isInitialCall) {
-        setIsLoading(true); // Only set for the very first call by useEffect
+        setIsLoading(true);
     }
-    // For subsequent calls (e.g., after delete/add), we might not want a full page skeleton.
-    // The button itself will show a loading state.
-    console.log(`[ANNOUNCEMENTS_PAGE] fetchAnnouncements called. Initial call: ${isInitialCall}`);
     setFetchAttempted(false);
     try {
       const response = await fetch('/api/school-admin/communications/announcements');
@@ -116,15 +113,14 @@ export default function ManageAnnouncementsPage() {
       console.error("[ANNOUNCEMENTS_PAGE] Fetch announcements error object:", error);
       setAnnouncements([]);
     } finally {
-      setIsLoading(false); // Always set to false when fetch completes or fails
+      setIsLoading(false); 
       setFetchAttempted(true);
     }
-  }, []); // Corrected: Empty dependency array for useCallback makes fetchAnnouncements stable
+  }, []); // Corrected dependency array
 
   useEffect(() => {
-    console.log('[ANNOUNCEMENTS_PAGE] Initial useEffect triggered.');
-    fetchAnnouncements(true); // Call with true for initial load
-  }, [fetchAnnouncements]); // This useEffect runs once because fetchAnnouncements is stable
+    fetchAnnouncements(true);
+  }, [fetchAnnouncements]);
 
   const handleAddSubmit: SubmitHandler<AnnouncementFormValues> = async (formData) => {
     const submittingToastId = toast.loading("Creating announcement...");
@@ -143,7 +139,7 @@ export default function ManageAnnouncementsPage() {
       toast.success("Announcement created successfully!", { id: submittingToastId });
       addAnnouncementForm.reset({ title: '', content: '', publishDate: new Date(), expiryDate: null, audience: 'ALL', isPublished: true });
       setIsAddModalOpen(false); 
-      fetchAnnouncements(); // Re-fetch list after adding
+      fetchAnnouncements(); 
       router.refresh(); 
     } catch (error: any) { 
         toast.error("Failed to create announcement", { id: submittingToastId, description: error.message });
@@ -151,9 +147,8 @@ export default function ManageAnnouncementsPage() {
   };
   
   const handleActionSuccess = () => {
-    console.log('[ANNOUNCEMENTS_PAGE] Delete action successful, re-fetching announcements.');
     toast.info("Refreshing announcements list...");
-    fetchAnnouncements(); 
+    fetchAnnouncements();
   };
 
   const formatDate = (dateString: string | Date | null | undefined) => {
@@ -226,6 +221,16 @@ export default function ManageAnnouncementsPage() {
 
   return (
     <div className="space-y-6">
+        {/* Back to Communications Hub Button */}
+        <div className="mb-4">
+            <Button variant="outline" size="sm" asChild>
+                <Link href="/school-admin/communications">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back to Communications Hub
+                </Link>
+            </Button>
+        </div>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div><CardTitle className="flex items-center"><Megaphone className="mr-2 h-6 w-6" /> Manage Announcements</CardTitle><CardDescription>Create, view, edit, and manage school-wide announcements.</CardDescription></div>
@@ -247,7 +252,9 @@ export default function ManageAnnouncementsPage() {
             </DialogContent>
           </Dialog>
         </CardHeader>
-        <CardContent>{contentToRender}</CardContent>
+        <CardContent>
+          {contentToRender}
+        </CardContent>
       </Card>
     </div>
   );
