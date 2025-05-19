@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { z } from 'zod';
-import { useForm, SubmitHandler, Controller } from 'react-hook-form';
+import { useForm, SubmitHandler, Controller, Resolver } from 'react-hook-form'; // Import Resolver
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FeeStructure as PrismaFeeStructure, TermPeriod } from '@prisma/client';
 
@@ -37,7 +37,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { PlusCircle, Edit, DollarSign} from "lucide-react";
+import { PlusCircle, Edit, DollarSign, Trash2 } from "lucide-react"; // Added Trash2 for DeleteButton
 
 // Import the custom DeleteFeeStructureButton component
 import { DeleteFeeStructureButton } from '@/components/school-admin/finances/DeleteFeeStructureButton'; // Adjust path if needed
@@ -49,15 +49,21 @@ const feeStructureFormSchema = z.object({
   name: z.string().min(3, "Fee structure name is required (e.g., Term 1 Tuition - Grade 1)."),
   description: z.string().optional().or(z.literal('')).nullable(),
   amount: z.preprocess(
-    // Convert empty string or non-numeric to undefined so optional validation works, else parse to float
-    (val) => (val === "" || val === null || val === undefined || isNaN(parseFloat(String(val)))) ? undefined : parseFloat(String(val)), 
-    z.number({required_error: "Amount is required.", invalid_type_error: "Amount must be a number."}).positive("Amount must be positive.")
+    (val) => {
+      const strVal = String(val).trim();
+      if (strVal === '') return undefined;
+      const num = parseFloat(strVal);
+      return isNaN(num) ? undefined : num;
+    },
+    z.number({required_error: "Amount is required.", invalid_type_error: "Amount must be a number."})
+     .positive("Amount must be positive.")
   ),
   academicYear: z.string()
-    .regex(/^\d{4}-\d{4}$/, "Academic year format: YYYY-YYYY (e.g., 2024-2025).")
+    .regex(/^\d{4}-\d{4}$/, "Academic year format: e.g., 2024-2025.") // Corrected example
     .refine(year => {
-        if(!year || year === '') return false; // Academic year is required
+        if(!year || year === '') return false; 
         const years = year.split('-');
+        if (years.length !== 2 || !/^\d{4}$/.test(years[0]) || !/^\d{4}$/.test(years[1])) return false;
         return parseInt(years[0]) + 1 === parseInt(years[1]);
     }, "Academic years must be consecutive and is required."),
   term: z.nativeEnum(TermPeriod).optional().nullable(),
@@ -66,7 +72,6 @@ const feeStructureFormSchema = z.object({
 
 type FeeStructureFormValues = z.infer<typeof feeStructureFormSchema>;
 
-// Predefined frequency options
 const frequencyOptions = ["Termly", "Annually", "Monthly", "One-time", "Session-based", "Per Subject"];
 
 export default function ManageFeeStructuresPage() {
@@ -81,22 +86,22 @@ export default function ManageFeeStructuresPage() {
     handleSubmit,
     reset,
     control,
-    formState: { errors, isSubmitting: isFormSubmitting },
+    formState: { errors, isSubmitting }, // Renamed isFormSubmitting to isSubmitting for consistency
   } = useForm<FeeStructureFormValues>({
-    resolver: zodResolver(feeStructureFormSchema),
+    resolver: zodResolver(feeStructureFormSchema) as Resolver<FeeStructureFormValues, any>, // <<< TYPE BYPASS APPLIED HERE
     defaultValues: {
       name: '',
       description: '',
       amount: undefined, 
       academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
-      term: null, // Explicitly null for controlled Select
+      term: null,
       frequency: '',
     }
   });
 
   const fetchFeeStructures = useCallback(async (isInitialLoad = false) => {
     if(isInitialLoad) setIsLoading(true);
-    setFetchAttempted(false); // Reset before fetch
+    setFetchAttempted(false);
     try {
       const response = await fetch('/api/school-admin/finances/fee-structures');
       if (!response.ok) {
@@ -107,10 +112,10 @@ export default function ManageFeeStructuresPage() {
       setFeeStructures(data);
     } catch (error: any) {
       toast.error("Failed to load fee structures", { description: error.message });
-      setFeeStructures([]); // Clear data on error
+      setFeeStructures([]);
     } finally {
       if(isInitialLoad) setIsLoading(false);
-      setFetchAttempted(true); // Mark fetch as attempted
+      setFetchAttempted(true);
     }
   }, []);
 
@@ -124,7 +129,7 @@ export default function ManageFeeStructuresPage() {
       const dataToSend = {
         ...formData,
         amount: Number(formData.amount), 
-        term: formData.term === "none" || formData.term === '' ? null : formData.term,
+        term: formData.term === "none" || formData.term === '' || formData.term === undefined ? null : formData.term,
         description: formData.description === '' ? null : formData.description,
       };
       const response = await fetch('/api/school-admin/finances/fee-structures', {
@@ -137,7 +142,11 @@ export default function ManageFeeStructuresPage() {
         throw new Error(result.message || "Failed to create fee structure.");
       }
       toast.success("Fee structure created successfully!", { id: submittingToastId });
-      reset();
+      reset({ // Reset with default values for the add form
+        name: '', description: '', amount: undefined, 
+        academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+        term: null, frequency: '',
+      });
       setIsAddModalOpen(false);
       fetchFeeStructures(false); 
       router.refresh(); 
@@ -148,10 +157,11 @@ export default function ManageFeeStructuresPage() {
   
   const formatAmount = (amount: any) => {
     if (amount === null || amount === undefined) return 'N/A';
-    return new Intl.NumberFormat('en-GH', { style: 'currency', currency: 'GHS' }).format(Number(amount));
+    // Prisma Decimal can be an object, ensure it's converted to number for formatting
+    return new Intl.NumberFormat('en-GH', { style: 'currency', currency: 'GHS' }).format(Number(amount.toString()));
   };
 
-  const handleActionSuccess = () => {
+  const handleActionSuccess = () => { // For DeleteFeeStructureButton callback
     toast.info("Refreshing fee structures list...");
     fetchFeeStructures(false);
   };
@@ -175,7 +185,7 @@ export default function ManageFeeStructuresPage() {
           <CardDescription>Define and manage different types of fees for your school.</CardDescription>
         </div>
         <Dialog open={isAddModalOpen} onOpenChange={(open) => {
-            if (!open) reset(); // Reset form when dialog closes
+            if (!open) reset({ name: '', description: '', amount: undefined, academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`, term: null, frequency: '' });
             setIsAddModalOpen(open);
         }}>
           <DialogTrigger asChild>
@@ -191,24 +201,24 @@ export default function ManageFeeStructuresPage() {
             <form onSubmit={handleSubmit(handleAddSubmit)} className="space-y-4 py-4">
               <div>
                 <Label htmlFor="add-fee-name">Fee Name <span className="text-destructive">*</span></Label>
-                <Input id="add-fee-name" {...register('name')} placeholder="e.g., Term 1 Tuition - Grade 1" disabled={isFormSubmitting} />
+                <Input id="add-fee-name" {...register('name')} placeholder="e.g., Term 1 Tuition - Grade 1" disabled={isSubmitting} />
                 {errors.name && <p className="text-sm text-destructive mt-1">{errors.name.message}</p>}
               </div>
               <div>
                 <Label htmlFor="add-fee-amount">Amount (GHS) <span className="text-destructive">*</span></Label>
-                <Input id="add-fee-amount" type="number" step="0.01" {...register('amount')} placeholder="e.g., 500.00" disabled={isFormSubmitting} />
+                <Input id="add-fee-amount" type="number" step="0.01" {...register('amount')} placeholder="e.g., 500.00" disabled={isSubmitting} />
                 {errors.amount && <p className="text-sm text-destructive mt-1">{errors.amount.message}</p>}
               </div>
               <div>
                 <Label htmlFor="add-fee-academicYear">Academic Year <span className="text-destructive">*</span></Label>
-                <Input id="add-fee-academicYear" {...register('academicYear')} placeholder="e.g., 2024-2025" disabled={isFormSubmitting} />
+                <Input id="add-fee-academicYear" {...register('academicYear')} placeholder="e.g., 2024-2025" disabled={isSubmitting} />
                 {errors.academicYear && <p className="text-sm text-destructive mt-1">{errors.academicYear.message}</p>}
               </div>
               <div>
                 <Label htmlFor="add-fee-term">Applicable Term (Optional)</Label>
                 <Controller name="term" control={control} render={({ field }) => (
-                  <Select onValueChange={(value) => field.onChange(value === "none" ? null : value as TermPeriod)} value={field.value || "none"} disabled={isFormSubmitting}>
-                    <SelectTrigger><SelectValue placeholder="Select term if applicable" /></SelectTrigger>
+                  <Select onValueChange={(value) => field.onChange(value === "none" ? null : value as TermPeriod)} value={field.value || "none"} disabled={isSubmitting}>
+                    <SelectTrigger id="add-fee-term"><SelectValue placeholder="Select term if applicable" /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="none">-- Not Term Specific --</SelectItem>
                         {Object.values(TermPeriod).map(term => <SelectItem key={term} value={term}>{term.replace("_", " ")}</SelectItem>)}
@@ -220,8 +230,8 @@ export default function ManageFeeStructuresPage() {
               <div>
                 <Label htmlFor="add-fee-frequency">Frequency <span className="text-destructive">*</span></Label>
                 <Controller name="frequency" control={control} render={({ field }) => (
-                  <Select onValueChange={field.onChange} value={field.value || ""} disabled={isFormSubmitting}>
-                    <SelectTrigger><SelectValue placeholder="Select frequency" /></SelectTrigger>
+                  <Select onValueChange={field.onChange} value={field.value || ""} disabled={isSubmitting}>
+                    <SelectTrigger id="add-fee-frequency"><SelectValue placeholder="Select frequency" /></SelectTrigger>
                     <SelectContent>
                         {frequencyOptions.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
                     </SelectContent>
@@ -231,13 +241,13 @@ export default function ManageFeeStructuresPage() {
               </div>
               <div>
                 <Label htmlFor="add-fee-description">Description (Optional)</Label>
-                <Textarea id="add-fee-description" {...register('description')} placeholder="Additional details about this fee" disabled={isFormSubmitting} />
+                <Textarea id="add-fee-description" {...register('description')} placeholder="Additional details about this fee" disabled={isSubmitting} />
                 {errors.description && <p className="text-sm text-destructive mt-1">{errors.description.message}</p>}
               </div>
               <DialogFooter className="pt-4">
-                <DialogClose asChild><Button type="button" variant="outline" disabled={isFormSubmitting}>Cancel</Button></DialogClose>
-                <Button type="submit" disabled={isFormSubmitting}>
-                  {isFormSubmitting ? 'Adding...' : 'Add Fee Structure'}
+                <DialogClose asChild><Button type="button" variant="outline" disabled={isSubmitting} onClick={() => reset({ name: '', description: '', amount: undefined, academicYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`, term: null, frequency: '' })}>Cancel</Button></DialogClose>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? 'Adding...' : 'Add Fee Structure'}
                 </Button>
               </DialogFooter>
             </form>
@@ -245,7 +255,7 @@ export default function ManageFeeStructuresPage() {
         </Dialog>
       </CardHeader>
       <CardContent>
-        {(isLoading && !fetchAttempted) ? ( // Show skeletons only on the very first load
+        {(isLoading && !fetchAttempted) ? (
              <Table>
               <TableCaption>Loading fee structure data...</TableCaption>
               <TableHeader>
@@ -257,9 +267,9 @@ export default function ManageFeeStructuresPage() {
               </TableHeader>
               <TableBody>{renderSkeletons()}</TableBody>
             </Table>
-        ) : !isLoading && feeStructures.length === 0 && fetchAttempted ? ( // Show if fetch is done, attempted, and still no data
+        ) : !isLoading && feeStructures.length === 0 && fetchAttempted ? (
           <div className="text-center py-10"><DollarSign className="mx-auto h-12 w-12 text-muted-foreground" /><h3 className="mt-2 text-sm font-medium">No fee structures found.</h3><p className="mt-1 text-sm text-muted-foreground">Get started by defining a new fee structure.</p></div>
-        ) : ( // Display table if data is present (or if loading for a re-fetch but old data is still there)
+        ) : (
           <Table>
             <TableCaption>A list of defined fee structures for your school.</TableCaption>
             <TableHeader>
