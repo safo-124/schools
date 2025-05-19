@@ -3,9 +3,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link'; // **** IMPORT Link ****
+import Link from 'next/link';
 import { z } from 'zod';
-import { useForm, SubmitHandler, Controller } from 'react-hook-form';
+import { useForm, SubmitHandler, Controller, Resolver } from 'react-hook-form'; // Import Resolver
 import { zodResolver } from '@hookform/resolvers/zod';
 import { 
     SchoolAnnouncement as PrismaSchoolAnnouncement, 
@@ -34,10 +34,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { PlusCircle, Megaphone, CalendarIcon, Edit, Trash2, ArrowLeft } from "lucide-react"; // Added ArrowLeft
+import { PlusCircle, Megaphone, CalendarIcon, Edit, Trash2, ArrowLeft } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 
-import { DeleteAnnouncementButton } from '@/components/school-admin/communications/DeleteAnnouncementButton';
+// Import the custom DeleteAnnouncementButton component
+import { DeleteAnnouncementButton } from '@/components/school-admin/communications/DeleteAnnouncementButton'; // Adjust path if needed
 
 interface AnnouncementWithAuthor extends PrismaSchoolAnnouncement {
   createdByAdmin?: {
@@ -45,13 +46,14 @@ interface AnnouncementWithAuthor extends PrismaSchoolAnnouncement {
   } | null;
 }
 
+// Zod schema for the Add Announcement form
 const announcementFormSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters long."),
   content: z.string().min(10, "Content must be at least 10 characters long."),
   publishDate: z.date().optional().nullable(),
   expiryDate: z.date().optional().nullable(),
   audience: z.string().optional().or(z.literal('')).nullable(),
-  isPublished: z.boolean().default(true),
+  isPublished: z.boolean().default(true), // Zod ensures this is always boolean in the inferred type
 }).refine(data => {
     if (data.expiryDate && data.publishDate && data.expiryDate < data.publishDate) {
         return false;
@@ -72,7 +74,7 @@ export default function ManageAnnouncementsPage() {
   const [fetchAttempted, setFetchAttempted] = useState(false);
 
   const addAnnouncementForm = useForm<AnnouncementFormValues>({
-    resolver: zodResolver(announcementFormSchema),
+    resolver: zodResolver(announcementFormSchema) as Resolver<AnnouncementFormValues, any>, // TYPE BYPASS APPLIED HERE
     defaultValues: {
       title: '', content: '', publishDate: new Date(), 
       expiryDate: null, audience: 'ALL', isPublished: true,
@@ -80,9 +82,7 @@ export default function ManageAnnouncementsPage() {
   });
 
   const fetchAnnouncements = useCallback(async (isInitialCall = false) => {
-    if (isInitialCall) {
-        setIsLoading(true);
-    }
+    if (isInitialCall) setIsLoading(true);
     setFetchAttempted(false);
     try {
       const response = await fetch('/api/school-admin/communications/announcements');
@@ -98,7 +98,7 @@ export default function ManageAnnouncementsPage() {
       
       if (responseText) {
         try { data = JSON.parse(responseText); } catch (e: any) {
-            console.error("[ANNOUNCEMENTS_PAGE] Failed to parse API response as JSON. Raw text:", responseText.substring(0, 200), 'Error:', e);
+            console.warn("[ANNOUNCEMENTS_PAGE] Failed to parse API response as JSON. Raw text:", responseText.substring(0, 200));
             throw new Error(`API response was not valid JSON. Status: ${response.status}.`);
         }
       }
@@ -116,7 +116,7 @@ export default function ManageAnnouncementsPage() {
       setIsLoading(false); 
       setFetchAttempted(true);
     }
-  }, []); // Corrected dependency array
+  }, []); // Empty dependency array for useCallback makes fetchAnnouncements stable
 
   useEffect(() => {
     fetchAnnouncements(true);
@@ -147,8 +147,9 @@ export default function ManageAnnouncementsPage() {
   };
   
   const handleActionSuccess = () => {
+    // This is called by DeleteAnnouncementButton after a successful delete
     toast.info("Refreshing announcements list...");
-    fetchAnnouncements();
+    fetchAnnouncements(); 
   };
 
   const formatDate = (dateString: string | Date | null | undefined) => {
@@ -221,16 +222,14 @@ export default function ManageAnnouncementsPage() {
 
   return (
     <div className="space-y-6">
-        {/* Back to Communications Hub Button */}
-        <div className="mb-4">
+      <div className="mb-4">
             <Button variant="outline" size="sm" asChild>
                 <Link href="/school-admin/communications">
                     <ArrowLeft className="mr-2 h-4 w-4" />
                     Back to Communications Hub
                 </Link>
             </Button>
-        </div>
-
+      </div>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div><CardTitle className="flex items-center"><Megaphone className="mr-2 h-6 w-6" /> Manage Announcements</CardTitle><CardDescription>Create, view, edit, and manage school-wide announcements.</CardDescription></div>
