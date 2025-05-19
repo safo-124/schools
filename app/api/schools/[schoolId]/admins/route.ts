@@ -1,39 +1,47 @@
 // app/api/schools/[schoolId]/admins/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient, UserRole, Prisma } from '@prisma/client';
+// PrismaClient import is not needed here if using shared prisma instance from lib/db
+import { UserRole, Prisma } from '@prisma/client'; 
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';// Adjust path
+import { authOptions } from '@/lib/auth'; // Ensure this path is correct
+import prisma from '@/lib/db'; // Using shared Prisma instance
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-
-const prisma = new PrismaClient();
 
 // Zod schema for creating a school admin
 const createSchoolAdminSchema = z.object({
   email: z.string().email("Invalid email address."),
   firstName: z.string().min(1, "First name is required."),
   lastName: z.string().min(1, "Last name is required."),
-  password: z.string().min(6, "Password must be at least 6 characters long."), // For creating a new user
-  // phoneNumber: z.string().optional(), // Optional
+  password: z.string().min(6, "Password must be at least 6 characters long."),
 });
 
-interface RouteContext {
-  params: {
-    schoolId: string;
-  };
-}
+// REMOVE the custom RouteContext interface
+// interface RouteContext {
+//   params: {
+//     schoolId: string;
+//   };
+// }
 
-export async function POST(req: NextRequest, { params }: RouteContext) {
+// POST Handler: Assign/Create a School Admin for a specific school
+export async function POST(
+  request: NextRequest, 
+  context: any // <<< TYPE BYPASS APPLIED HERE
+) {
+  const params = context.params as { schoolId: string }; // Internal type assertion
+  const { schoolId } = params;
+
+  console.log(`[API_SCHOOL_ADMINS_POST] Request to add admin to schoolId: ${schoolId}`);
   try {
+    if (typeof schoolId !== 'string' || !schoolId) {
+        console.warn('[API_SCHOOL_ADMINS_POST] schoolId is missing or not a string from context.params');
+        return NextResponse.json({ message: 'School ID is required and must be a string' }, { status: 400 });
+    }
+
     // 1. Authenticate and Authorize Super Admin
     const session = await getServerSession(authOptions);
     if (!session?.user?.id || session.user.role !== UserRole.SUPER_ADMIN) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
-    }
-
-    const { schoolId } = params;
-    if (!schoolId) {
-      return NextResponse.json({ message: 'School ID is required' }, { status: 400 });
+      return NextResponse.json({ message: 'Unauthorized: Only Super Admins can assign school admins.' }, { status: 403 });
     }
 
     // 2. Validate School's Existence
@@ -43,10 +51,12 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     }
 
     // 3. Parse and Validate Request Body
-    const body = await req.json();
+    const body = await request.json();
+    console.log("[API_SCHOOL_ADMINS_POST] Received body:", JSON.stringify(body, null, 2));
     const validation = createSchoolAdminSchema.safeParse(body);
 
     if (!validation.success) {
+      console.error("[API_SCHOOL_ADMINS_POST] Zod validation failed:", JSON.stringify(validation.error.flatten().fieldErrors, null, 2));
       return NextResponse.json({ message: 'Invalid input', errors: validation.error.flatten().fieldErrors }, { status: 400 });
     }
 
@@ -57,46 +67,39 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       where: { email },
     });
 
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
     if (!targetUser) {
       // User does not exist, create them
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
       targetUser = await prisma.user.create({
         data: {
           email,
           firstName,
           lastName,
-          hashedPassword, // Set the hashed password
-          role: UserRole.SCHOOL_ADMIN, // Assign SCHOOL_ADMIN role
-          isActive: true, // New users are active by default
-          // phoneNumber: validation.data.phoneNumber, // If you collect it
+          hashedPassword,
+          role: UserRole.SCHOOL_ADMIN, // Assign SCHOOL_ADMIN role to the User
+          isActive: true,
         },
       });
-      console.log(`New user created for School Admin: ${targetUser.email}`);
+      console.log(`[API_SCHOOL_ADMINS_POST] New user created for School Admin role: ${targetUser.email}`);
     } else {
-      // User exists. Check if they are already an admin of this school.
-      // Also, consider if you want to update their role or password.
-      // For simplicity now, if user exists, we'll just link them if not already linked.
-      // You might want to prevent assigning an existing user who isn't already a SCHOOL_ADMIN
-      // or has a different critical role, or update their User.role if appropriate.
-      // For now, we assume if they exist, we are just linking them to this school as an admin.
-      // If their User.role is not SCHOOL_ADMIN, you might want to update it or throw an error.
-      // This part can get complex depending on business rules.
+      // User exists. Check if they are already an admin of THIS school.
+      console.log(`[API_SCHOOL_ADMINS_POST] User ${email} already exists. Role: ${targetUser.role}.`);
+      // Optionally, update their primary role to SCHOOL_ADMIN if it's different and appropriate
       if (targetUser.role !== UserRole.SCHOOL_ADMIN && targetUser.role !== UserRole.SUPER_ADMIN) {
-        // Optionally update the user's general role if they are being made a school admin
-        // This is a design decision: does becoming a SchoolAdmin change their primary User.role?
-        // For now, let's assume their primary role might not change, or if it does, handle with care.
-        // For this implementation, we'll prioritize creating the SchoolAdmin link.
-        // A more robust solution might update User.role or have a multi-role system.
-        console.warn(`User ${email} exists with role ${targetUser.role}. Assigning as School Admin for school ${schoolId}. Their primary User.role remains ${targetUser.role} unless updated separately.`);
+        // This is a business logic decision: should assigning as SchoolAdmin upgrade their User.role?
+        // For now, we won't change User.role if they exist, but this might need refinement.
+        // The SchoolAdmin table link is what grants specific school admin rights.
+        console.warn(`User ${email} exists with role ${targetUser.role}. They will be linked as a School Admin to school ${schoolId}. Their primary User.role on the User table is not changed by this operation unless explicitly handled.`);
+        // If you decide to update User.role:
+        // await prisma.user.update({ where: { id: targetUser.id }, data: { role: UserRole.SCHOOL_ADMIN }});
       }
     }
 
-    // 5. Check if user is already an admin for this school
+    // 5. Check if user is already an admin for this specific school
     const existingSchoolAdminLink = await prisma.schoolAdmin.findUnique({
       where: {
-        userId_schoolId: {
+        userId_schoolId: { // This refers to the @@unique([userId, schoolId]) constraint in SchoolAdmin model
           userId: targetUser.id,
           schoolId: schoolId,
         },
@@ -110,60 +113,72 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     // 6. Create the SchoolAdmin link
     const newSchoolAdminLink = await prisma.schoolAdmin.create({
       data: {
-        userId: targetUser.id,
-        schoolId: schoolId,
-        jobTitle: "School Administrator", // Default job title
+        userId: targetUser.id, // Link to the User record
+        schoolId: schoolId,   // Link to the School record
+        jobTitle: "School Administrator", 
       },
+      include: { // Include user details in the response
+          user: { select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true }}
+      }
     });
 
+    console.log(`[API_SCHOOL_ADMINS_POST] User ${targetUser.email} successfully assigned as School Administrator for school ${schoolId}.`);
     return NextResponse.json({
       message: `User ${targetUser.email} successfully assigned as School Administrator.`,
       schoolAdmin: newSchoolAdminLink,
-      user: { id: targetUser.id, email: targetUser.email, role: targetUser.role } // Return some user info
     }, { status: 201 });
 
-  } catch (error) {
-    console.error(`Error assigning school admin to school ${params.schoolId}:`, error);
+  } catch (error: any) {
+    console.error(`[API_SCHOOL_ADMINS_POST] Error assigning school admin to school ${schoolId || 'unknown'}:`, error.name, error.message, error.stack);
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2002') { // Unique constraint failed (e.g. if email was meant to be globally unique and user creation failed)
-        return NextResponse.json({ message: `A user with this email might already exist or another unique constraint failed.` }, { status: 409 });
+      if (error.code === 'P2002') { 
+        return NextResponse.json({ message: `A user with this email might already exist with a conflicting unique constraint, or the SchoolAdmin link already exists.` }, { status: 409 });
       }
       return NextResponse.json({ message: `Database error: ${error.code}` }, { status: 500 });
     }
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ message: 'Invalid input (Zod)', errors: error.errors }, { status: 400 });
+      return NextResponse.json({ message: 'Invalid input (Zod final check)', errors: error.errors }, { status: 400 });
     }
-    return NextResponse.json({ message: 'An unexpected error occurred' }, { status: 500 });
+    return NextResponse.json({ message: 'An unexpected error occurred while assigning school admin.' }, { status: 500 });
   }
 }
 
-// You might also want a GET handler here to list all admins for a school
-export async function GET(req: NextRequest, { params }: RouteContext) {
+// GET Handler: List all admins for a specific school
+export async function GET(
+  request: NextRequest, 
+  context: any // <<< TYPE BYPASS APPLIED HERE
+) {
+    const params = context.params as { schoolId: string }; // Internal type assertion
+    const { schoolId } = params;
+
+    console.log(`[API_SCHOOL_ADMINS_GET] Request to list admins for schoolId: ${schoolId}`);
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.id || session.user.role !== UserRole.SUPER_ADMIN) {
-            return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
+        if (typeof schoolId !== 'string' || !schoolId) {
+            console.warn('[API_SCHOOL_ADMINS_GET] schoolId is missing or not a string from context.params');
+            return NextResponse.json({ message: 'School ID is required and must be a string' }, { status: 400 });
         }
 
-        const { schoolId } = params;
-        if (!schoolId) {
-            return NextResponse.json({ message: 'School ID is required' }, { status: 400 });
+        const session = await getServerSession(authOptions);
+        // Only Super Admin should list admins for any school by ID.
+        // School Admins viewing their own colleagues might use a different, non-parameterized route.
+        if (!session?.user?.id || session.user.role !== UserRole.SUPER_ADMIN) {
+            return NextResponse.json({ message: 'Unauthorized: Insufficient privileges' }, { status: 403 });
         }
 
         const schoolAdmins = await prisma.schoolAdmin.findMany({
             where: { schoolId: schoolId },
             include: {
                 user: {
-                    select: { id: true, email: true, firstName: true, lastName: true, isActive: true }
+                    select: { id: true, email: true, firstName: true, lastName: true, isActive: true, role: true }
                 }
             },
-            orderBy: { createdAt: 'desc' }
+            orderBy: { user: { firstName: 'asc' } }
         });
-
+        console.log(`[API_SCHOOL_ADMINS_GET] Found ${schoolAdmins.length} admins for school ${schoolId}.`);
         return NextResponse.json(schoolAdmins, { status: 200 });
 
-    } catch (error) {
-        console.error(`Error fetching admins for school ${params.schoolId}:`, error);
-        return NextResponse.json({ message: 'An unexpected error occurred' }, { status: 500 });
+    } catch (error: any) {
+        console.error(`[API_SCHOOL_ADMINS_GET] Error fetching admins for school ${schoolId || 'unknown'}:`, error.name, error.message);
+        return NextResponse.json({ message: 'An unexpected error occurred while fetching school administrators.' }, { status: 500 });
     }
 }
